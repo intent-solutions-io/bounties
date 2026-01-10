@@ -1,0 +1,23 @@
+# Cloned repos (each has its own git)
+appsmith/
+cal-com/
+calcom/
+cortex/
+feishin/
+filament/
+gumroad/
+posthog/
+projectdiscovery/
+screenpipe/
+shadcn-ui/
+tldraw/
+zio/
+
+# Python
+.coverage
+__pycache__/
+*.pyc
+
+# Claude
+.claude/
+.beads/
