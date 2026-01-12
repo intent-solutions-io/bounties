@@ -21,9 +21,11 @@ bd close <id> --reason "PR #123"     # After completing
 | Directory | Stack | Bounties | Notes |
 |-----------|-------|----------|-------|
 | `gumroad/` | Ruby/Rails + React/TS | $1,500/file | Tailwind CSS migration |
+| `cortex/` | Python 3.10+ | $50-200 | AI-native OS - CLA required |
 | `screenpipe/` | Rust + Tauri + TS/Bun | $25-500 | AI/screen recording |
 | `posthog/` | Python/Django + React/TS | Varies | Analytics platform |
 | `calcom/` | TypeScript/Next.js | $20-500 | Scheduling platform |
+| `tldraw/` | TypeScript/React | Varies | Drawing library |
 | `filament/` | PHP/Laravel | Varies | Admin panel |
 | `feishin/` | TypeScript/React | Varies | Music player |
 | `appsmith/` | Java + React/TS | Varies | Low-code platform |
@@ -31,8 +33,9 @@ bd close <id> --reason "PR #123"     # After completing
 
 ## Tracking
 
-- `bounty-tracker.csv` - Master spreadsheet of all bounties with status
-- Check for competing PRs before starting work on any bounty
+- `000-docs/002-PM-BKLG-bounty-tracker.csv` - Master spreadsheet with status
+- `surgical-bounties.md` - Curated list of small, template-based bounties
+- Always check GitHub for competing PRs before starting work
 
 ## Project-Specific Quick Reference
 
@@ -77,6 +80,26 @@ cd screenpipe-app-tauri && bun install && bun run dev  # Tauri app
 - Lowercase for all logging and UI text
 - No toast errors - use empty states, skeletons, inline errors
 
+### Cortex ($50-200 bounties)
+
+**CLA Required**: Must sign before first PR - see [CLA.md](cortex/CLA.md)
+
+```bash
+cd cortex
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+pip install -e .                   # Development install
+pytest tests/ -v                   # Run tests
+pytest tests/ --cov=cortex --cov-report=html  # Coverage
+black cortex/ --check              # Check formatting
+```
+
+**PR Requirements**:
+- Demo video (before/after for bugs, feature demo for new work)
+- AI disclosure in PR template
+- Tests with >80% coverage
+- No force push - use merge commits only
+
 ### PostHog
 
 ```bash
@@ -84,7 +107,14 @@ cd posthog
 flox activate -- pytest path/to/test.py::TestClass::test_method  # Single test
 ruff check . --fix && ruff format .  # Python lint
 pnpm --filter=@posthog/frontend test  # Frontend tests
+pnpm --filter=@posthog/frontend typescript:check  # TypeScript check
 ```
+
+**Style**:
+- Python: Type hints required, snake_case
+- Frontend: TypeScript required, Tailwind over inline styles
+- Use Sentence casing for product names (e.g., "Product analytics" not "Product Analytics")
+- Conventional commits: `feat(scope): description`, `fix(scope): description`, `chore: description`
 
 ### CalCom
 
@@ -95,9 +125,20 @@ yarn dev                           # Development
 yarn test                          # Tests
 ```
 
+### Tldraw
+
+```bash
+cd tldraw
+yarn install
+yarn dev                           # Development
+yarn test                          # Tests
+```
+
+**Style**: TypeScript, uses yarn workspaces (monorepo)
+
 ## Bounty Hunting Workflow
 
-1. **Research**: Check `bounty-tracker.csv` for open bounties
+1. **Research**: Check `000-docs/002-PM-BKLG-bounty-tracker.csv` for open bounties
 2. **Verify**: Check GitHub for competing PRs on the target issue
 3. **Claim**: Comment on issue or use `/bounty` on Algora
 4. **Track**: `bd update <id> --status in_progress`
@@ -105,7 +146,18 @@ yarn test                          # Tests
 6. **Submit**: PR with required screenshots/videos
 7. **Close**: `bd close <id> --reason "PR #xyz"`
 
+## Tools
+
+`tools/` contains PDF generation utilities for creating bounty guides:
+
+```bash
+cd tools
+npm install
+node generate-pdf.js               # Generate PDFs from markdown
+```
+
 ## Payment
 
 - **Gumroad**: Email `bounties@antiwork.com` after merge
 - **Algora**: Platform handles payment automatically
+- **Cortex**: Bitcoin (preferred), USDC, or PayPal within 48 hours

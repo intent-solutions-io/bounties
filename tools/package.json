@@ -1,0 +1,14 @@
+{
+  "name": "bounty-tools",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "email": "node --env-file=.env send-email.js",
+    "pdf": "node --env-file=.env generate-pdf.js"
+  },
+  "dependencies": {
+    "resend": "^4.0.0",
+    "md-to-pdf": "^5.2.0",
+    "puppeteer": "^24.0.0"
+  }
+}
