@@ -22,8 +22,9 @@ cal-com,,Various,$20-500,Available,,,LOW,,,Many claimed already
 tldraw,7664,VS Code Prettier extension,$0,MERGED,7664,3,NONE,2025-01-09,2025-01-09,No bounty but good for rep
 posthog,44709,Split ID modal close fix,$0,Submitted,44709,,NONE,2025-01-10,,All checks pass - awaiting human review
 posthog,44181,Lifecycle legend fix,$0,Submitted,44181,,NONE,2025-01-01,,Awaiting review
-cortex,448,Systemd Service Helper,$100,PR Submitted,557,590,NONE,2025-01-10,,Bot fixes pushed - CLA pending
-cortex,452,Tarball Helper,$126,PR Submitted,558,726,NONE,2025-01-10,,Bot fixes + docs pushed - CLA pending
+cortex,448,Systemd Service Helper,$100,PR Submitted,557,590,NONE,2025-01-10,,Bot fixes pushed - CLA PR #568 submitted
+cortex,452,Tarball Helper,$126,PR Submitted,558,726,NONE,2025-01-10,,Bot fixes + docs pushed - CLA PR #568 submitted
+cortex,,CLA Addition,$0,PR Submitted,568,,NONE,2025-01-11,,Adds jeremylongshore to cla-signers.json
 cal.com,,Double hover fix,$20-50,Submitted,26441,,NONE,2025-01-04,,Destructive dropdown UI fix
 cal.com,,App card truncation,$20-50,Submitted,26440,,NONE,2025-01-04,,Tailwind line-clamp fix
 feishin,1513,Top songs sort fix,$0,Submitted,1513,,NONE,2025-01-05,,Sort by play count not rating
