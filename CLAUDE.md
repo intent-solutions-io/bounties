@@ -136,6 +136,27 @@ yarn test                          # Tests
 
 **Style**: TypeScript, uses yarn workspaces (monorepo)
 
+## Cloud Dev Environment
+
+**ALWAYS use the cloud VM for development and testing** - do not run heavy tests locally.
+
+```bash
+# SSH into bounty-dev VM
+gcloud compute ssh bounty-dev --zone=us-central1-a
+
+# Run command on VM without interactive shell
+gcloud compute ssh bounty-dev --zone=us-central1-a --command="<command>"
+
+# Example: Run tests on VM
+gcloud compute ssh bounty-dev --zone=us-central1-a --command="cd vertex-ai-samples && pytest"
+```
+
+**VM Details:**
+- Name: `bounty-dev`
+- Zone: `us-central1-a`
+- Type: `e2-standard-4`
+- Use for: Running tests, linting, notebook validation, heavy builds
+
 ## Bounty Hunting Workflow
 
 1. **Research**: Check `000-docs/002-PM-BKLG-bounty-tracker.csv` for open bounties
@@ -143,8 +164,30 @@ yarn test                          # Tests
 3. **Claim**: Comment on issue or use `/bounty` on Algora
 4. **Track**: `bd update <id> --status in_progress`
 5. **Develop**: Follow project-specific guidelines above
-6. **Submit**: PR with required screenshots/videos
-7. **Close**: `bd close <id> --reason "PR #xyz"`
+6. **Test**: Run full test suite on cloud VM - ALL TESTS MUST PASS
+7. **Human Approval**: STOP and ask user for approval before submitting PR
+8. **Submit**: PR with required screenshots/videos (only after approval)
+9. **Close**: `bd close <id> --reason "PR #xyz"`
+
+## MANDATORY: Pre-PR Checklist
+
+**Before submitting ANY pull request, you MUST:**
+
+1. **Run all tests on cloud VM** - not locally
+   ```bash
+   gcloud compute ssh bounty-dev --zone=us-central1-a --command="cd <repo> && <test-command>"
+   ```
+
+2. **Verify test results** - ALL tests must pass, report coverage %
+
+3. **Run project-specific linters** - no lint errors allowed
+
+4. **ASK USER FOR APPROVAL** - Do NOT submit PR without explicit human approval
+   - Show test results summary
+   - Show what files changed
+   - Wait for "yes" or "approved" before creating PR
+
+**NEVER auto-submit PRs. Always wait for human approval.**
 
 ## Tools
 
