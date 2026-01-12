@@ -1,15 +1,4 @@
 repo,issue,task,bounty,status,pr_number,lines,competition,date_started,date_completed,notes
-gumroad,1055,_legacy.scss,$1500,Needs Revision,2573,177,NONE,2024-12-30,,PR closed - needs proper Tailwind migration + screenshots + AI disclosure
-gumroad,1055,_icons.scss,$1500,Available,,53,NONE,,,EASIEST - only 53 lines
-gumroad,1055,_dropdown.scss,$1500,Available,,92,NONE,,,PR #2275 closed - now open
-gumroad,1055,_button.scss,$1500,BLOCKED,,94,PR #2324,,,Competing PR still open
-gumroad,1055,_definitions.scss,$1500,Available,,296,NONE,,,Medium
-gumroad,1055,_global.scss,$1500,Available,,308,NONE,,,Medium
-gumroad,1055,_rich_text.scss,$1500,Available,,360,NONE,,,Medium - editor styles
-gumroad,1055,_email.scss,$1500,Available,,794,NONE,,,LARGEST - email templates
-gumroad,1055,_forms.scss,$1500,Available,,unknown,NONE,,,PR #2536 closed - now open
-gumroad,1055,_stack.scss,$1500,BLOCKED,,unknown,PR #2558,,,Competing PR still open
-gumroad,1055,_alert.scss,$1500,Available,,unknown,NONE,,,File may not exist
 zio,519,Schema Migration,$4000,Available,,,NONE,,,Scala required
 zio,516,Patch & Diffing,$3000,Available,,,NONE,,,Scala required
 zio,471,TypeName to TypeId,$3000,Available,,,NONE,,,Scala required

@@ -20,7 +20,6 @@ bd close <id> --reason "PR #123"     # After completing
 
 | Directory | Stack | Bounties | Notes |
 |-----------|-------|----------|-------|
-| `gumroad/` | Ruby/Rails + React/TS | $1,500/file | Tailwind CSS migration |
 | `cortex/` | Python 3.10+ | $50-200 | AI-native OS - CLA required |
 | `screenpipe/` | Rust + Tauri + TS/Bun | $25-500 | AI/screen recording |
 | `posthog/` | Python/Django + React/TS | Varies | Analytics platform |
@@ -38,33 +37,6 @@ bd close <id> --reason "PR #123"     # After completing
 - Always check GitHub for competing PRs before starting work
 
 ## Project-Specific Quick Reference
-
-### Gumroad (Primary Target - $1,500/file)
-
-**Bounty**: SCSS to Tailwind migration per file ([Issue #1055](https://github.com/antiwork/gumroad/issues/1055))
-
-```bash
-cd gumroad
-bundle install && npm install
-make build                         # Docker build
-docker compose -f docker-compose-local.yml up  # Local dev
-```
-
-**Tailwind Migration Rules**:
-- No `@apply` directives - classes in markup only
-- No arbitrary values without justification
-- Mobile-first responsive (`sm:`, `md:`, `lg:` only where values change)
-- Use `classNames()` utility, not `cx` or ternaries
-- No `!important` bang modifiers
-
-**PR Requirements**:
-- Before/after screenshots (light/dark, mobile/desktop)
-- Video demonstration
-- E2E tests
-- AI disclosure
-- Self-review comments
-
-**Commit Format**: `feat(scope): title` (Conventional Commits)
 
 ### Screenpipe ($25-500 bounties via Algora)
 
@@ -201,6 +173,5 @@ node generate-pdf.js               # Generate PDFs from markdown
 
 ## Payment
 
-- **Gumroad**: Email `bounties@antiwork.com` after merge
 - **Algora**: Platform handles payment automatically
 - **Cortex**: Bitcoin (preferred), USDC, or PayPal within 48 hours
