@@ -24,7 +24,7 @@ posthog,44709,Split ID modal close fix,$0,Submitted,44709,,NONE,2025-01-10,,All 
 posthog,44181,Lifecycle legend fix,$0,Submitted,44181,,NONE,2025-01-01,,Awaiting review
 cortex,448,Systemd Service Helper,$100,PR Submitted,557,590,NONE,2025-01-10,,Bot fixes pushed - CLA PR #568 submitted
 cortex,452,Tarball Helper,$126,PR Submitted,558,726,NONE,2025-01-10,,Bot fixes + docs pushed - CLA PR #568 submitted
-cortex,,CLA Addition,$0,PR Submitted,568,,NONE,2025-01-11,,Adds jeremylongshore to cla-signers.json
+cortex,,CLA Addition,$0,MERGED,568,,NONE,2025-01-11,2025-01-12,Adds jeremylongshore to cla-signers.json
 cal.com,,Double hover fix,$20-50,Submitted,26441,,NONE,2025-01-04,,Destructive dropdown UI fix
 cal.com,,App card truncation,$20-50,Submitted,26440,,NONE,2025-01-04,,Tailwind line-clamp fix
 feishin,1513,Top songs sort fix,$0,Submitted,1513,,NONE,2025-01-05,,Sort by play count not rating
