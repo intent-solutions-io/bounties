@@ -20,6 +20,18 @@ tscircuit,,Various,$25-150,Available,,,NONE,,,$5502 pool - React/PCB
 projectdiscovery,,CVE Templates,$100,Available,,,NONE,,,Security templates
 cal-com,,Various,$20-500,Available,,,LOW,,,Many claimed already
 tldraw,7664,VS Code Prettier extension,$0,MERGED,7664,3,NONE,2025-01-09,2025-01-09,No bounty but good for rep
-posthog,44709,Modal close bug fix,$0,Submitted,44709,,NONE,2025-01-09,,Status unknown - check
-cortex,448,Systemd Service Helper,$100,PR Submitted,557,590,NONE,2025-01-10,,CLA pending #556 - $50+$50 bonus
-cortex,452,Tarball Helper,$126,PR Submitted,558,726,NONE,2025-01-10,,$63+$63 bonus - 100% test coverage - CLA pending
+posthog,44709,Split ID modal close fix,$0,Submitted,44709,,NONE,2025-01-10,,All checks pass - awaiting human review
+posthog,44181,Lifecycle legend fix,$0,Submitted,44181,,NONE,2025-01-01,,Awaiting review
+cortex,448,Systemd Service Helper,$100,PR Submitted,557,590,NONE,2025-01-10,,Bot fixes pushed - CLA pending
+cortex,452,Tarball Helper,$126,PR Submitted,558,726,NONE,2025-01-10,,Bot fixes + docs pushed - CLA pending
+cal.com,,Double hover fix,$20-50,Submitted,26441,,NONE,2025-01-04,,Destructive dropdown UI fix
+cal.com,,App card truncation,$20-50,Submitted,26440,,NONE,2025-01-04,,Tailwind line-clamp fix
+feishin,1513,Top songs sort fix,$0,Submitted,1513,,NONE,2025-01-05,,Sort by play count not rating
+vertex-ai-samples,4393,ADK inline deployment tutorial,$0,Submitted,4393,,NONE,2025-12-12,,Google Cloud - ADK Agent Engine tutorial
+a2a-samples,419,Bob's Brain A2A demo,$0,Submitted,419,,NONE,2025-12-04,,Foreman-worker pattern demo
+ai-card,7,Bob's Brain reference impl,$0,Submitted,7,,NONE,2025-12-03,,Production-grade A2A reference
+anthropic-sdk-typescript,874,Fix broken README link,$0,Submitted,874,,NONE,2025-01-04,,Docs fix - @std/log link
+claude-code,16215,Fix plugin docs links,$0,Submitted,16215,,NONE,2025-01-04,,CONTRIBUTING + LICENSE links
+claude-code-action,788,Fix custom-automations links,$0,Submitted,788,,NONE,2025-01-04,,Example file links
+claude-quickstarts,339,Fix browser-use-demo link,$0,Submitted,339,,NONE,2025-01-04,,Broken link fix
+claude-cookbooks,340,Fix docs links,$0,Submitted,340,,NONE,2025-01-04,,Multiple broken links
