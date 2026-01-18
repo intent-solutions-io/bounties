@@ -12,7 +12,9 @@ import {
   User,
   Moon,
   Sun,
-  Search
+  Search,
+  Zap,
+  Bell
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/themes';
@@ -28,6 +30,7 @@ const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Bounties', href: '/dashboard/bounties', icon: Target },
   { name: 'Discover', href: '/dashboard/discover', icon: Search },
+  { name: 'Automation', href: '/dashboard/automation', icon: Zap },
   { name: 'Proofs', href: '/dashboard/proofs', icon: FileCheck, feature: 'showProofs' },
   { name: 'Financials', href: '/dashboard/financials', icon: DollarSign, feature: 'showFinancials' },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },
