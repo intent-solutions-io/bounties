@@ -8,7 +8,12 @@ import {
   Palette,
   Github,
   Mail,
-  Smartphone
+  Smartphone,
+  Upload,
+  Download,
+  FileSpreadsheet,
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
 import { Header } from '@/components/layout/header';
 import { useAuth } from '@/lib/auth-context';
@@ -21,6 +26,56 @@ export default function SettingsPage() {
     browser: true,
   });
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    success: boolean;
+    message: string;
+    count?: number;
+  } | null>(null);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImporting(true);
+    setImportResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('source', 'manual-import');
+
+      const res = await fetch('/api/import/csv', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await res.json();
+
+      if (data.error) {
+        setImportResult({ success: false, message: data.error });
+      } else {
+        setImportResult({
+          success: true,
+          message: `Successfully imported ${data.imported} bounties`,
+          count: data.imported
+        });
+      }
+    } catch (err) {
+      setImportResult({
+        success: false,
+        message: err instanceof Error ? err.message : 'Import failed'
+      });
+    } finally {
+      setImporting(false);
+      // Reset file input
+      e.target.value = '';
+    }
+  };
+
+  const downloadTemplate = () => {
+    window.location.href = '/api/import/csv';
+  };
 
   return (
     <>
@@ -220,6 +275,84 @@ export default function SettingsPage() {
                   Connected
                 </span>
               </div>
+            </div>
+          </div>
+
+          {/* Data Import Section */}
+          <div className="rounded-xl bg-white p-6 shadow-sm dark:bg-gray-800">
+            <div className="mb-4 flex items-center gap-3">
+              <FileSpreadsheet className="h-5 w-5 text-gray-500" />
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Data Import
+              </h2>
+            </div>
+
+            <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
+              Import bounties from CSV files. Useful for tracking bounties from platforms
+              without API integration.
+            </p>
+
+            <div className="space-y-4">
+              {/* Template Download */}
+              <button
+                onClick={downloadTemplate}
+                className="flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+              >
+                <Download className="h-4 w-4" />
+                Download CSV Template
+              </button>
+
+              {/* File Upload */}
+              <div className="relative">
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={handleFileUpload}
+                  disabled={importing}
+                  className="hidden"
+                  id="csv-upload"
+                />
+                <label
+                  htmlFor="csv-upload"
+                  className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed px-6 py-8 transition-colors ${
+                    importing
+                      ? 'border-gray-300 bg-gray-50 dark:border-gray-600 dark:bg-gray-700'
+                      : 'border-gray-300 hover:border-primary-400 hover:bg-primary-50 dark:border-gray-600 dark:hover:border-primary-500 dark:hover:bg-primary-900/20'
+                  }`}
+                >
+                  {importing ? (
+                    <>
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
+                      <span className="text-gray-500 dark:text-gray-400">Importing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-6 w-6 text-gray-400" />
+                      <span className="text-gray-600 dark:text-gray-300">
+                        Click to upload CSV file
+                      </span>
+                    </>
+                  )}
+                </label>
+              </div>
+
+              {/* Import Result */}
+              {importResult && (
+                <div
+                  className={`flex items-center gap-3 rounded-lg p-4 ${
+                    importResult.success
+                      ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
+                      : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
+                  }`}
+                >
+                  {importResult.success ? (
+                    <CheckCircle className="h-5 w-5 flex-shrink-0" />
+                  ) : (
+                    <AlertCircle className="h-5 w-5 flex-shrink-0" />
+                  )}
+                  {importResult.message}
+                </div>
+              )}
             </div>
           </div>
 
