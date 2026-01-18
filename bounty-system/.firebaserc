@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "bounty-system-prod"
+  },
+  "targets": {
+    "bounty-system-prod": {
+      "hosting": {
+        "intent": ["intentsolutions-io"],
+        "startai": ["startaitools-io"],
+        "jeremy": ["jeremylongshore-com"]
+      }
+    }
+  }
+}
