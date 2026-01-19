@@ -1,8 +1,61 @@
 import { Command } from 'commander';
 import ora from 'ora';
 import chalk from 'chalk';
+import { execSync } from 'child_process';
 import { getBounty, updateBounty, createProof, getSessions } from '../lib/firestore';
 import { nowISO, generateId } from '@bounty-system/core';
+
+interface GitStats {
+  linesAdded: number;
+  linesDeleted: number;
+  filesChanged: number;
+}
+
+/**
+ * Calculate git diff stats for the current branch vs main/master.
+ * Falls back to HEAD~10 if no main branch found.
+ */
+function getGitStats(): GitStats {
+  try {
+    // Try to find the base branch (main or master)
+    let baseBranch = 'main';
+    try {
+      execSync('git rev-parse --verify main', { stdio: 'pipe' });
+    } catch {
+      try {
+        execSync('git rev-parse --verify master', { stdio: 'pipe' });
+        baseBranch = 'master';
+      } catch {
+        // No main/master, use HEAD~10 as fallback
+        baseBranch = 'HEAD~10';
+      }
+    }
+
+    // Get shortstat output: "5 files changed, 120 insertions(+), 45 deletions(-)"
+    const output = execSync(`git diff --shortstat ${baseBranch}...HEAD 2>/dev/null || git diff --shortstat ${baseBranch} HEAD`, {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe']
+    }).trim();
+
+    if (!output) {
+      return { linesAdded: 0, linesDeleted: 0, filesChanged: 0 };
+    }
+
+    // Parse the shortstat output
+    const filesMatch = output.match(/(\d+)\s+files?\s+changed/);
+    const insertionsMatch = output.match(/(\d+)\s+insertions?\(\+\)/);
+    const deletionsMatch = output.match(/(\d+)\s+deletions?\(-\)/);
+
+    return {
+      filesChanged: filesMatch ? parseInt(filesMatch[1], 10) : 0,
+      linesAdded: insertionsMatch ? parseInt(insertionsMatch[1], 10) : 0,
+      linesDeleted: deletionsMatch ? parseInt(deletionsMatch[1], 10) : 0
+    };
+  } catch {
+    // Not in a git repo or git not available
+    return { linesAdded: 0, linesDeleted: 0, filesChanged: 0 };
+  }
+}
 
 export const submitCommand = new Command('submit')
   .description('Submit a bounty for review')
@@ -39,6 +92,9 @@ export const submitCommand = new Command('submit')
       const recordings = sessions.flatMap(s => s.recordings || []);
       const checkpoints = sessions.flatMap(s => s.checkpoints || []);
 
+      spinner.text = 'Calculating git stats...';
+      const gitStats = getGitStats();
+
       spinner.text = 'Creating proof bundle...';
       const now = nowISO();
       const proofId = generateId('proof');
@@ -56,9 +112,9 @@ export const submitCommand = new Command('submit')
         })),
         screenshots: [],
         checkpoints: checkpoints.length,
-        linesAdded: 0,  // TODO: Calculate from git
-        linesDeleted: 0,
-        filesChanged: 0,
+        linesAdded: gitStats.linesAdded,
+        linesDeleted: gitStats.linesDeleted,
+        filesChanged: gitStats.filesChanged,
         prUrl: options.pr,
         notes: options.notes,
         createdAt: now,
@@ -88,6 +144,10 @@ export const submitCommand = new Command('submit')
       console.log(`  Sessions: ${sessions.length}`);
       console.log(`  Recordings: ${recordings.length}`);
       console.log(`  Checkpoints: ${checkpoints.length}`);
+      if (gitStats.filesChanged > 0) {
+        console.log(`  Files changed: ${gitStats.filesChanged}`);
+        console.log(`  Lines: ${chalk.green(`+${gitStats.linesAdded}`)} / ${chalk.red(`-${gitStats.linesDeleted}`)}`);
+      }
       if (options.pr) {
         console.log(`  PR: ${options.pr}`);
       }
