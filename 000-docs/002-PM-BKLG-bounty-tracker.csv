@@ -8,20 +8,20 @@ screenpipe,,Various,$25-500,Available,,,NONE,,,$4910 pool - TypeScript/AI
 tscircuit,,Various,$25-150,Available,,,NONE,,,$5502 pool - React/PCB
 projectdiscovery,,CVE Templates,$100,Available,,,NONE,,,Security templates
 cal-com,,Various,$20-500,Available,,,LOW,,,Many claimed already
-tldraw,7664,VS Code Prettier extension,$0,MERGED,7664,3,NONE,2025-01-09,2025-01-09,No bounty but good for rep
-posthog,44709,Split ID modal close fix,$0,Submitted,44709,,NONE,2025-01-10,,All checks pass - awaiting human review
-posthog,44181,Lifecycle legend fix,$0,Submitted,44181,,NONE,2025-01-01,,Awaiting review
-cortex,448,Systemd Service Helper,$100,PR Submitted,557,590,NONE,2025-01-10,,CLA PASSING - ready for review
-cortex,452,Tarball Helper,$126,PR Submitted,558,726,NONE,2025-01-10,,CLA PASSING - ready for review
+tldraw,7664,VS Code Prettier extension,$0,MERGED,7664,3,NONE,2025-01-09,2025-01-10,No bounty but good for rep
+posthog,44709,Split ID modal close fix,$0,Submitted,44709,,NONE,2025-01-10,,Awaiting human review - bot reviews only
+posthog,44181,Lifecycle legend fix,$0,Submitted,44181,,NONE,2025-01-01,,STALE - responded to keep open
+cortex,448,Systemd Service Helper,$100,SUPERSEDED,557→597,590,NONE,2025-01-10,,PR #557 superseded by maintainer PR #597
+cortex,452,Tarball Helper,$126,CLOSED,558,726,NONE,2025-01-10,2026-01-19,CLOSED - SonarCloud QG failing + multiple review rounds - abandoned
 cortex,,CLA Addition,$0,MERGED,568,,NONE,2025-01-11,2025-01-12,Adds jeremylongshore to cla-signers.json
-cal.com,,Double hover fix,$20-50,Submitted,26441,,NONE,2025-01-04,,Destructive dropdown UI fix
-cal.com,,App card truncation,$20-50,Submitted,26440,,NONE,2025-01-04,,Tailwind line-clamp fix
-feishin,1513,Top songs sort fix,$0,Submitted,1513,,NONE,2025-01-05,,Sort by play count not rating
-vertex-ai-samples,4393,ADK inline deployment tutorial,$0,Submitted,4393,,NONE,2025-12-12,,Google Cloud - ADK Agent Engine tutorial
+cal.com,,Double hover fix,$20-50,CLOSED,26441,,NONE,2025-01-04,2025-01-12,REJECTED - maintainer said not fixing issue
+cal.com,,App card truncation,$20-50,CLOSED,26440,,NONE,2025-01-04,2025-01-12,REJECTED - line-clamp doesnt work with nested HTML
+feishin,1513,Top songs sort fix,$0,Submitted,1513,,NONE,2025-01-05,,Owner says intended behavior - offered to implement proper parameter approach
+vertex-ai-samples,4393,ADK inline deployment tutorial,$0,MERGED,4393,552,NONE,2025-12-12,2026-01-13,MERGED by gericdong - 32 days to merge
 a2a-samples,419,Bob's Brain A2A demo,$0,Submitted,419,,NONE,2025-12-04,,Foreman-worker pattern demo
 ai-card,7,Bob's Brain reference impl,$0,Submitted,7,,NONE,2025-12-03,,Production-grade A2A reference
-anthropic-sdk-typescript,874,Fix broken README link,$0,Submitted,874,,NONE,2025-01-04,,Docs fix - @std/log link
-claude-code,16215,Fix plugin docs links,$0,Submitted,16215,,NONE,2025-01-04,,CONTRIBUTING + LICENSE links
-claude-code-action,788,Fix custom-automations links,$0,Submitted,788,,NONE,2025-01-04,,Example file links
-claude-quickstarts,339,Fix browser-use-demo link,$0,Submitted,339,,NONE,2025-01-04,,Broken link fix
-claude-cookbooks,340,Fix docs links,$0,Submitted,340,,NONE,2025-01-04,,Multiple broken links
+anthropic-sdk-typescript,874,Fix broken README link,$0,Submitted,874,,NONE,2025-01-04,,CHANGES_REQUESTED - maintainers questioning value - offered to close
+claude-code,16215,Fix plugin docs links,$0,Submitted,16215,,NONE,2025-01-04,,Awaiting review - no activity
+claude-code-action,788,Fix custom-automations links,$0,Submitted,788,,NONE,2025-01-04,,Awaiting review - no activity
+claude-quickstarts,339,Fix browser-use-demo link,$0,Submitted,339,,NONE,2025-01-04,,Awaiting review - no activity
+anthropic-cookbook,340,Fix docs links,$0,Submitted,340,,NONE,2025-01-04,,APPROVED - needs verified commit signatures to merge
