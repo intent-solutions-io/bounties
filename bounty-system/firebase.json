@@ -3,86 +3,16 @@
     "rules": "firestore/firestore.rules",
     "indexes": "firestore/firestore.indexes.json"
   },
-  "hosting": [
-    {
-      "target": "intent",
-      "public": "apps/dashboard/.next/standalone",
-      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-      "rewrites": [
-        {
-          "source": "/portal/**",
-          "run": { "serviceId": "bounty-portal", "region": "us-central1" }
-        },
-        {
-          "source": "/proof/**",
-          "run": { "serviceId": "bounty-portal", "region": "us-central1" }
-        },
-        {
-          "source": "/api/**",
-          "run": { "serviceId": "bounty-api", "region": "us-central1" }
-        },
-        { "source": "**", "destination": "/index.html" }
-      ],
-      "headers": [
-        {
-          "source": "**/*.@(js|css)",
-          "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
-        }
-      ]
-    },
-    {
-      "target": "startai",
-      "public": "apps/dashboard/.next/standalone",
-      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-      "rewrites": [
-        {
-          "source": "/portal/**",
-          "run": { "serviceId": "bounty-portal", "region": "us-central1" }
-        },
-        {
-          "source": "/proof/**",
-          "run": { "serviceId": "bounty-portal", "region": "us-central1" }
-        },
-        {
-          "source": "/api/**",
-          "run": { "serviceId": "bounty-api", "region": "us-central1" }
-        },
-        { "source": "**", "destination": "/index.html" }
-      ],
-      "headers": [
-        {
-          "source": "**/*.@(js|css)",
-          "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
-        }
-      ]
-    },
-    {
-      "target": "jeremy",
-      "public": "apps/dashboard/.next/standalone",
-      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-      "rewrites": [
-        {
-          "source": "/portal/**",
-          "run": { "serviceId": "bounty-portal", "region": "us-central1" }
-        },
-        {
-          "source": "/proof/**",
-          "run": { "serviceId": "bounty-portal", "region": "us-central1" }
-        },
-        {
-          "source": "/api/**",
-          "run": { "serviceId": "bounty-api", "region": "us-central1" }
-        },
-        { "source": "**", "destination": "/index.html" }
-      ],
-      "headers": [
-        {
-          "source": "**/*.@(js|css)",
-          "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
-        }
-      ]
-    }
-  ],
+  "hosting": {
+    "public": "apps/dashboard/public",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      {
+        "source": "**",
+        "run": { "serviceId": "bounty-dashboard", "region": "us-central1" }
+      }
+    ]
+  },
   "storage": {
     "rules": "storage.rules"
   }
