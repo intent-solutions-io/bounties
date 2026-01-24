@@ -10,11 +10,17 @@ import {
   Clock,
   DollarSign,
   FileCheck,
-  PlayCircle
+  PlayCircle,
+  Bot,
+  CheckCircle,
+  XCircle,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 import { Header } from '@/components/layout/header';
 import { useBounty } from '@/lib/hooks/use-bounties';
 import { useProofs } from '@/lib/hooks/use-proofs';
+import { useWorkflow } from '@/lib/hooks/use-workflow';
 
 const statusColors: Record<string, string> = {
   open: 'bg-green-100 text-green-800',
@@ -33,6 +39,14 @@ export default function BountyDetailPage() {
 
   const { bounty, loading: bountyLoading } = useBounty(id);
   const { proofs, loading: proofsLoading } = useProofs(id);
+  const {
+    status: workflowStatus,
+    loading: workflowLoading,
+    error: workflowError,
+    startWorkflow,
+    approveExecution,
+    rejectExecution,
+  } = useWorkflow(id);
 
   if (bountyLoading) {
     return (
@@ -240,6 +254,116 @@ export default function BountyDetailPage() {
 
           {/* Sidebar */}
           <div className="space-y-6">
+            {/* AI Workflow Card */}
+            <div className="rounded-xl bg-white p-6 shadow-sm dark:bg-gray-800">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-100 dark:bg-purple-900/30">
+                  <Bot className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900 dark:text-white">AI Workflow</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Powered by Bob&apos;s Brain</p>
+                </div>
+              </div>
+
+              {workflowError && (
+                <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4" />
+                    {workflowError}
+                  </div>
+                </div>
+              )}
+
+              {!workflowStatus ? (
+                <button
+                  onClick={() => {
+                    if (bounty?.repo && bounty?.issue) {
+                      const issueUrl = `https://github.com/${bounty.repo}/issues/${bounty.issue}`;
+                      startWorkflow(issueUrl, bounty.repo);
+                    }
+                  }}
+                  disabled={workflowLoading || !bounty?.repo || !bounty?.issue}
+                  className="w-full rounded-lg bg-purple-600 px-4 py-3 font-medium text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {workflowLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Bot className="h-4 w-4" />
+                  )}
+                  Execute with Bob
+                </button>
+              ) : (
+                <div className="space-y-4">
+                  {/* Workflow Status */}
+                  <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-700/50">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Status</span>
+                      <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                        workflowStatus.currentNode === 'complete'
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                          : workflowStatus.currentNode === 'approval'
+                          ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+                          : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                      }`}>
+                        {workflowStatus.currentNode === 'complete' ? 'Complete' :
+                         workflowStatus.currentNode === 'approval' ? 'Awaiting Approval' :
+                         workflowStatus.currentNode || 'Running'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      Phase: {workflowStatus.phase || 'N/A'}
+                    </div>
+                  </div>
+
+                  {/* Approval Buttons */}
+                  {workflowStatus.currentNode === 'approval' && !workflowStatus.humanApproved && (
+                    <div className="space-y-2">
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Review the plan and approve to execute:
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={approveExecution}
+                          disabled={workflowLoading}
+                          className="flex-1 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-1"
+                        >
+                          {workflowLoading ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <CheckCircle className="h-4 w-4" />
+                          )}
+                          Approve
+                        </button>
+                        <button
+                          onClick={rejectExecution}
+                          disabled={workflowLoading}
+                          className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-1"
+                        >
+                          {workflowLoading ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <XCircle className="h-4 w-4" />
+                          )}
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Show execution result if complete */}
+                  {workflowStatus.currentNode === 'complete' && workflowStatus.executionResult && (
+                    <div className="text-sm">
+                      <p className="font-medium text-gray-700 dark:text-gray-300 mb-1">Result:</p>
+                      <p className="text-gray-500 dark:text-gray-400">
+                        {JSON.stringify(workflowStatus.executionResult).slice(0, 100)}...
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Value Card */}
             <div className="rounded-xl bg-white p-6 shadow-sm dark:bg-gray-800">
               <div className="flex items-center gap-3">
