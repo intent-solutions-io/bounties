@@ -1,0 +1,47 @@
+# Intentional Bounty - LangChain Orchestrator Dependencies
+# Hard Mode: LangGraph + Vertex AI (L1, L2)
+# Last Updated: 2026-01-24
+
+# Core requirement for Agent Engine deployment
+google-cloud-aiplatform[agent_engines,langgraph]>=1.112.0
+
+# Core LangGraph (L1: Agent workflow framework) - v1.0 is production stable
+langgraph>=1.0.0,<2.0.0
+
+# LangChain Core
+langchain>=0.3.0,<1.0.0
+langchain-core>=0.3.0
+
+# Google Vertex AI Integration (L2: LLM provider)
+langchain-google-vertexai>=2.0.0
+
+# Checkpointing (L5: Production persistence)
+langgraph-checkpoint-postgres>=2.0.0
+psycopg[binary]>=3.1.0
+
+# A2A Communication with Bob's Brain
+httpx>=0.25.0
+
+# API Server
+fastapi>=0.115.0
+pydantic>=2.4.0
+uvicorn[standard]>=0.30.0
+
+# Google Cloud Platform
+google-auth>=2.23.0
+google-cloud-logging>=3.8.0
+
+# Observability
+opentelemetry-api>=1.21.0
+opentelemetry-sdk>=1.21.0
+opentelemetry-exporter-gcp-trace>=1.5.0
+
+# Development & Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+
+# Code Quality
+black>=24.0.0
+ruff>=0.1.0
+mypy>=1.6.0
