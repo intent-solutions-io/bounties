@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  output: 'standalone',
   transpilePackages: ['@bounty-system/core', '@bounty-system/ui'],
   // Exclude problematic packages from server-side bundling
   serverExternalPackages: ['undici'],
