@@ -8,7 +8,6 @@ This module provides REST endpoints for the dashboard to:
 - Search learnings
 """
 
-import os
 import uuid
 from typing import Optional
 
@@ -17,7 +16,8 @@ from pydantic import BaseModel
 
 from .agent import graph
 from .state import BountyState
-from .knowledge import sync_repo_knowledge
+from .memory import get_store, MemoryManager
+from .knowledge import sync_repo_knowledge, record_submission_outcome
 
 # FastAPI app
 app = FastAPI(
@@ -61,23 +61,28 @@ class ApproveResponse(BaseModel):
     bounty_id: str
 
 
-# Store instance (initialized lazily)
-_store = None
+class RecordOutcomeRequest(BaseModel):
+    """Request to record bounty outcome."""
+
+    outcome: str  # merged | rejected | stale | abandoned
+    reviewer_feedback: Optional[str] = None
 
 
-def get_store():
-    """Get or create the LangGraph Store instance."""
-    global _store
-    if _store is None:
-        database_url = os.environ.get("DATABASE_URL")
-        if database_url:
-            from langgraph.store.postgres import PostgresStore
+# Memory manager instance (initialized lazily)
+_memory = None
 
-            _store = PostgresStore.from_conn_string(database_url)
-        else:
-            # For development, use an in-memory mock
-            _store = {}
-    return _store
+
+def _get_memory() -> MemoryManager:
+    """Get or create the MemoryManager instance."""
+    global _memory
+    if _memory is None:
+        _memory = MemoryManager()
+    return _memory
+
+
+def _is_store_configured(store) -> bool:
+    """Check if store is properly configured (not a fallback dict)."""
+    return not isinstance(store, dict)
 
 
 # Endpoints
@@ -195,22 +200,19 @@ async def reject_execution(bounty_id: str):
 @app.get("/api/repos")
 async def list_repos():
     """List all tracked repos with summaries."""
-    store = get_store()
-
-    # If using mock store, return empty
-    if isinstance(store, dict):
-        return []
+    memory = _get_memory()
 
     try:
-        repos = await store.alist(namespace=("repos",))
+        repos = await memory.list_repos()
         return [
             {
-                "id": r.key,
-                "summary": r.value.get("quick_summary", []),
-                "url": r.value.get("url", ""),
-                "links": r.value.get("links", {}),
+                "id": repo_id,
+                "summary": profile.get("quick_summary", []),
+                "url": profile.get("url", ""),
+                "links": profile.get("links", {}),
+                "last_synced": profile.get("last_synced"),
             }
-            for r in repos
+            for repo_id, profile in repos
         ]
     except Exception:
         return []
@@ -219,13 +221,10 @@ async def list_repos():
 @app.get("/api/repos/{repo_id}")
 async def get_repo_detail(repo_id: str):
     """Get full repo profile for deep dive."""
-    store = get_store()
-
-    if isinstance(store, dict):
-        raise HTTPException(status_code=404, detail="Store not configured")
+    memory = _get_memory()
 
     try:
-        profile = await store.aget(("repos", repo_id), "profile")
+        profile = await memory.get_repo_profile(repo_id)
         if not profile:
             raise HTTPException(status_code=404, detail="Repo not found")
         return profile
@@ -243,7 +242,7 @@ async def sync_repo(repo_url: str, background_tasks: BackgroundTasks):
     """
     store = get_store()
 
-    if isinstance(store, dict):
+    if not _is_store_configured(store):
         raise HTTPException(status_code=503, detail="Store not configured")
 
     background_tasks.add_task(sync_repo_knowledge, repo_url, store)
@@ -256,7 +255,7 @@ async def list_bounties():
     """List all bounties with current phase."""
     store = get_store()
 
-    if isinstance(store, dict):
+    if not _is_store_configured(store):
         return []
 
     try:
@@ -275,18 +274,83 @@ async def list_bounties():
         return []
 
 
+@app.get("/api/bounties/{bounty_id}")
+async def get_bounty_detail(bounty_id: str):
+    """Get full bounty state."""
+    memory = _get_memory()
+
+    try:
+        state = await memory.get_bounty_state(bounty_id)
+        if not state:
+            raise HTTPException(status_code=404, detail="Bounty not found")
+        return state
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/bounties/{bounty_id}/outcome")
+async def record_outcome(bounty_id: str, request: RecordOutcomeRequest):
+    """Record the outcome of a bounty submission.
+
+    Call this when a PR is merged, rejected, or abandoned.
+    This records learnings for future reference.
+    """
+    store = get_store()
+
+    if not _is_store_configured(store):
+        raise HTTPException(status_code=503, detail="Store not configured")
+
+    try:
+        await record_submission_outcome(
+            bounty_id=bounty_id,
+            outcome=request.outcome,
+            reviewer_feedback=request.reviewer_feedback,
+            store=store,
+        )
+        return {"status": "recorded", "bounty_id": bounty_id, "outcome": request.outcome}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/learnings")
 async def search_learnings(query: str = "", limit: int = 10):
     """Semantic search over past learnings."""
-    store = get_store()
-
-    if isinstance(store, dict):
-        return []
+    memory = _get_memory()
 
     try:
-        results = await store.asearch(
-            namespace=("learnings",),
-            query=query,
+        results = await memory.search_learnings(query=query, limit=limit)
+        return results
+    except Exception:
+        return []
+
+
+@app.get("/api/learnings/rejections")
+async def list_rejections(limit: int = 20):
+    """List recent rejection learnings."""
+    memory = _get_memory()
+
+    try:
+        results = await memory.search_learnings(
+            query="rejection",
+            category="rejections",
+            limit=limit,
+        )
+        return results
+    except Exception:
+        return []
+
+
+@app.get("/api/learnings/successes")
+async def list_successes(limit: int = 20):
+    """List recent success learnings."""
+    memory = _get_memory()
+
+    try:
+        results = await memory.search_learnings(
+            query="success merged",
+            category="successes",
             limit=limit,
         )
         return results
