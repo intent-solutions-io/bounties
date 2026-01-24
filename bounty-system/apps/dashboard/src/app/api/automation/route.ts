@@ -3,9 +3,12 @@
  *
  * Auto-claim bounties based on criteria, deadline reminders,
  * and scheduled discovery scans.
+ * Persisted to Firestore.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getAdminDb, COLLECTIONS } from '@/lib/firebase-admin';
+import type { QueryDocumentSnapshot, DocumentData } from 'firebase-admin/firestore';
 
 export interface AutomationRule {
   id: string;
@@ -62,10 +65,6 @@ export interface AutomationLog {
   timestamp: string;
 }
 
-// In-memory stores (use Firestore in production)
-const rulesStore: Map<string, AutomationRule[]> = new Map();
-const logsStore: Map<string, AutomationLog[]> = new Map();
-
 /**
  * GET /api/automation - Get automation rules
  */
@@ -76,7 +75,20 @@ export async function GET(request: NextRequest) {
   const includeLogs = searchParams.get('includeLogs') === 'true';
 
   try {
-    const rules = rulesStore.get(userId) || [];
+    const db = getAdminDb();
+    const rulesRef = db
+      .collection(COLLECTIONS.AUTOMATION_RULES)
+      .doc(userId)
+      .collection('rules');
+
+    const rulesSnapshot = await rulesRef.orderBy('createdAt', 'desc').get();
+    const rules: AutomationRule[] = rulesSnapshot.docs.map(
+      (doc: QueryDocumentSnapshot<DocumentData>) => ({
+        id: doc.id,
+        ...doc.data(),
+      })
+    ) as AutomationRule[];
+
     const response: {
       rules: AutomationRule[];
       logs?: AutomationLog[];
@@ -89,9 +101,22 @@ export async function GET(request: NextRequest) {
     } = { rules };
 
     if (includeLogs) {
-      response.logs = (logsStore.get(userId) || [])
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-        .slice(0, 50);
+      const logsRef = db
+        .collection(COLLECTIONS.AUTOMATION_LOGS)
+        .doc(userId)
+        .collection('logs');
+
+      const logsSnapshot = await logsRef
+        .orderBy('timestamp', 'desc')
+        .limit(50)
+        .get();
+
+      response.logs = logsSnapshot.docs.map(
+        (doc: QueryDocumentSnapshot<DocumentData>) => ({
+          id: doc.id,
+          ...doc.data(),
+        })
+      ) as AutomationLog[];
     }
 
     if (includeStats) {
@@ -136,8 +161,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const rule: AutomationRule = {
-      id: `rule-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    const db = getAdminDb();
+    const rulesRef = db
+      .collection(COLLECTIONS.AUTOMATION_RULES)
+      .doc(userId)
+      .collection('rules');
+
+    const ruleData: Omit<AutomationRule, 'id'> = {
       name,
       enabled: true,
       type,
@@ -156,9 +186,12 @@ export async function POST(request: NextRequest) {
       updatedAt: new Date().toISOString(),
     };
 
-    const userRules = rulesStore.get(userId) || [];
-    userRules.push(rule);
-    rulesStore.set(userId, userRules);
+    const docRef = await rulesRef.add(ruleData);
+
+    const rule: AutomationRule = {
+      id: docRef.id,
+      ...ruleData,
+    };
 
     return NextResponse.json({
       success: true,
@@ -188,26 +221,39 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const userRules = rulesStore.get(userId) || [];
-    const ruleIndex = userRules.findIndex(r => r.id === ruleId);
+    const db = getAdminDb();
+    const ruleRef = db
+      .collection(COLLECTIONS.AUTOMATION_RULES)
+      .doc(userId)
+      .collection('rules')
+      .doc(ruleId);
 
-    if (ruleIndex === -1) {
+    const doc = await ruleRef.get();
+
+    if (!doc.exists) {
       return NextResponse.json(
         { error: 'Rule not found' },
         { status: 404 }
       );
     }
 
+    const existing = doc.data() as AutomationRule;
+
     const updatedRule: AutomationRule = {
-      ...userRules[ruleIndex],
+      ...existing,
       ...updates,
-      conditions: { ...userRules[ruleIndex].conditions, ...updates.conditions },
-      actions: { ...userRules[ruleIndex].actions, ...updates.actions },
+      id: ruleId,
+      conditions: { ...existing.conditions, ...updates.conditions },
+      actions: { ...existing.actions, ...updates.actions },
       updatedAt: new Date().toISOString(),
     };
 
-    userRules[ruleIndex] = updatedRule;
-    rulesStore.set(userId, userRules);
+    await ruleRef.update({
+      ...updates,
+      conditions: updatedRule.conditions,
+      actions: updatedRule.actions,
+      updatedAt: updatedRule.updatedAt,
+    });
 
     return NextResponse.json({
       success: true,
@@ -238,17 +284,23 @@ export async function DELETE(request: NextRequest) {
   }
 
   try {
-    const userRules = rulesStore.get(userId) || [];
-    const filtered = userRules.filter(r => r.id !== ruleId);
+    const db = getAdminDb();
+    const ruleRef = db
+      .collection(COLLECTIONS.AUTOMATION_RULES)
+      .doc(userId)
+      .collection('rules')
+      .doc(ruleId);
 
-    if (filtered.length === userRules.length) {
+    const doc = await ruleRef.get();
+
+    if (!doc.exists) {
       return NextResponse.json(
         { error: 'Rule not found' },
         { status: 404 }
       );
     }
 
-    rulesStore.set(userId, filtered);
+    await ruleRef.delete();
 
     return NextResponse.json({
       success: true,
