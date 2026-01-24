@@ -21,20 +21,26 @@ bd close <id> --reason "PR #123"     # After completing
 | Directory | Stack | Bounties | Notes |
 |-----------|-------|----------|-------|
 | `cortex/` | Python 3.10+ | $50-200 | AI-native OS - CLA required |
-| `screenpipe/` | Rust + Tauri + TS/Bun | $25-500 | AI/screen recording |
-| `posthog/` | Python/Django + React/TS | Varies | Analytics platform |
+| `screenpipe/` | Rust + Tauri + TS/Bun | $25-500 | AI/screen recording via Algora |
+| `posthog/` | Python/Django + React/TS | Varies | Analytics - uses flox environment |
 | `calcom/` | TypeScript/Next.js | $20-500 | Scheduling platform |
-| `tldraw/` | TypeScript/React | Varies | Drawing library |
-| `filament/` | PHP/Laravel | Varies | Admin panel |
-| `feishin/` | TypeScript/React | Varies | Music player |
+| `tldraw/` | TypeScript/React | Varies | Drawing library - yarn workspaces |
 | `appsmith/` | Java + React/TS | Varies | Low-code platform |
-| `shadcn-ui/` | TypeScript/React | Varies | Component library |
+| `vertex-ai-samples/` | Python notebooks | Contrib | Google Cloud - CLA required |
+| `zio-blocks/` | Scala 3 + sbt | $2-4K | ZIO Schema library |
+| `feishin/` | React + Electron + pnpm | Contrib | Self-hosted music player |
+| `filament/` | PHP/Laravel + Livewire | Varies | Has own CLAUDE.md |
+| `shadcn-ui/` | TypeScript/React | Varies | Has own CLAUDE.md |
+| `bounty-system/` | TypeScript/pnpm | Internal | Custom CLI for tracking + recordings |
+| `claude-cookbooks/` | Various | Contrib | Has own CLAUDE.md |
 
 ## Tracking
 
 - `000-docs/002-PM-BKLG-bounty-tracker.csv` - Master spreadsheet with status
-- `surgical-bounties.md` - Curated list of small, template-based bounties
-- Always check GitHub for competing PRs before starting work
+- `000-docs/001-BL-TRCK-payment-tracker.md` - Payment tracking
+- `surgical-bounties.md` - Curated list of small (<100 LOC) template-based bounties
+- **CRITICAL**: Always check GitHub for competing PRs before starting work - many bounties get superseded
+- Use `gh pr list --repo <owner>/<repo> --search "<issue#>"` to find competing PRs
 
 ## Project-Specific Quick Reference
 
@@ -46,11 +52,15 @@ cargo build                        # Rust core
 cd screenpipe-app-tauri && bun install && bun run dev  # Tauri app
 ```
 
+**Architecture**: CLI + Tauri app that records screens/mics 24/7, extracts OCR/STT, saves to SQLite at `$HOME/.screenpipe/db.sqlite`, connects to AI. Plugins ("pipes") written in TS + Bun.
+
 **Style**:
-- Rust: anyhow errors, tokio async, prefer channels over mutex
-- TS: NextJS + Tailwind + shadcn + lucide + framer-motion
-- Lowercase for all logging and UI text
-- No toast errors - use empty states, skeletons, inline errors
+- Rust: anyhow errors, tokio async, prefer channels over mutex, easy to read for humans
+- TS: NextJS + Tailwind + shadcn + lucide + magicui + framer-motion
+- **Lowercase for ALL logging and UI text**
+- No toast errors - use empty states, skeletons, inline errors, disabled states
+- Keep `@ts-ignore` comments unless explicitly asked to remove
+- Escape HTML properly in React (use `&apos;` etc. when inside quotes)
 
 ### Cortex ($50-200 bounties)
 
@@ -74,19 +84,23 @@ black cortex/ --check              # Check formatting
 
 ### PostHog
 
+**Environment**: Uses flox - run commands with `flox activate -- bash -c "<command>"` (never interactive)
+
 ```bash
 cd posthog
-flox activate -- pytest path/to/test.py::TestClass::test_method  # Single test
-ruff check . --fix && ruff format .  # Python lint
-pnpm --filter=@posthog/frontend test  # Frontend tests
+flox activate -- bash -c "pytest path/to/test.py::TestClass::test_method"  # Single test
+flox activate -- bash -c "ruff check . --fix && ruff format ."  # Python lint
+pnpm --filter=@posthog/frontend test              # Frontend tests
 pnpm --filter=@posthog/frontend typescript:check  # TypeScript check
 ```
 
 **Style**:
-- Python: Type hints required, snake_case
-- Frontend: TypeScript required, Tailwind over inline styles
-- Use Sentence casing for product names (e.g., "Product analytics" not "Product Analytics")
-- Conventional commits: `feat(scope): description`, `fix(scope): description`, `chore: description`
+- Python: Type hints required, snake_case, no mypy (too slow)
+- Frontend: TypeScript required, Tailwind over inline styles, avoid direct dayjs imports (use lib/dayjs)
+- Sentence casing for product names (e.g., "Product analytics" not "Product Analytics")
+- Conventional commits: `feat(scope):`, `fix(scope):`, `chore:` - lowercase, no period
+- Comments: explain WHY not WHAT, no doc comments in Python tests
+- Tests: prefer parameterized tests (use `parameterized` library in Python)
 
 ### CalCom
 
@@ -107,6 +121,77 @@ yarn test                          # Tests
 ```
 
 **Style**: TypeScript, uses yarn workspaces (monorepo)
+
+### Vertex AI Samples (Google Cloud)
+
+**CLA Required**: Sign at https://cla.developers.google.com/
+
+```bash
+cd vertex-ai-samples
+pip3 install --user -U nbqa black flake8 isort pyupgrade
+docker run -v ${PWD}:/setup/app gcr.io/cloud-devrel-public-resources/notebook_linter:latest your_notebook.ipynb
+```
+
+**Style**: One notebook per PR, follow Google notebook standards.
+
+### ZIO Blocks ($2-4K bounties)
+
+```bash
+cd zio-blocks
+sbt compile                        # Compile
+sbt test                           # Run tests
+sbt scalafmtCheckAll               # Check formatting
+```
+
+**Style**: Scala 3, pure FP, uses sbt. See `.scalafmt.conf` for formatting rules.
+
+### Feishin (Music Player)
+
+```bash
+cd feishin
+pnpm install
+pnpm run dev                       # Electron dev
+pnpm run lint                      # Lint code + styles
+pnpm run lint:fix                  # Auto-fix
+```
+
+**Style**: React + Electron, uses pnpm. ESLint + Stylelint for code/CSS.
+
+### Bounty-System (Custom CLI)
+
+The `bounty-system/` directory contains a custom bounty tracking CLI with work session recording.
+
+```bash
+cd bounty-system
+pnpm install && pnpm build
+
+# Core commands
+bounty list                      # List all bounties
+bounty list -s open              # List open bounties
+bounty show <id>                 # Show bounty details
+bounty claim <id>                # Claim a bounty
+
+# Work session recording (uses asciinema)
+bounty work start <id>           # Start recording session
+bounty work checkpoint "message" # Add progress checkpoint
+bounty work stop                 # End session + upload to GCS
+
+# GitHub integration
+bounty github sync owner/repo    # Sync labeled issues
+```
+
+**Architecture**: pnpm monorepo with `packages/core` (Zod schemas), `packages/cli`, `apps/dashboard`, and `services/` (Cloud Functions for webhooks).
+
+### Claude Cookbooks
+
+```bash
+cd claude-cookbooks
+# Check its CLAUDE.md for specific instructions
+```
+
+### Filament & shadcn-ui
+
+Both have their own `CLAUDE.md` files with detailed instructions. Read those before contributing.
 
 ## Cloud Dev Environment
 
@@ -163,12 +248,13 @@ gcloud compute ssh bounty-dev --zone=us-central1-a --command="cd vertex-ai-sampl
 
 ## Tools
 
-`tools/` contains PDF generation utilities for creating bounty guides:
+`tools/` contains utilities for bounty management:
 
 ```bash
 cd tools
 npm install
 node generate-pdf.js               # Generate PDFs from markdown
+python sync-airtable.py            # Sync bounty tracker to Airtable (needs AIRTABLE_API_KEY in .env)
 ```
 
 ## Payment
