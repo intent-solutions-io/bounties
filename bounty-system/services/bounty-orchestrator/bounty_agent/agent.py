@@ -317,4 +317,34 @@ def _build_graph():
 
 # Legacy export for langgraph.json and local testing
 # For Agent Engine, use BountyOrchestrator class instead
-graph = _build_graph()
+# Lazy-loaded to prevent import errors when langgraph not installed
+_graph_instance = None
+
+
+def get_graph():
+    """Get or create the compiled graph. Lazy-loaded."""
+    global _graph_instance
+    if _graph_instance is None:
+        _graph_instance = _build_graph()
+    return _graph_instance
+
+
+# For backwards compatibility with langgraph.json which expects 'graph'
+# This creates a lazy property-like behavior
+class _LazyGraph:
+    """Lazy wrapper for graph to defer initialization until first access."""
+
+    _instance = None
+
+    def __getattr__(self, name):
+        if _LazyGraph._instance is None:
+            _LazyGraph._instance = _build_graph()
+        return getattr(_LazyGraph._instance, name)
+
+    def __call__(self, *args, **kwargs):
+        if _LazyGraph._instance is None:
+            _LazyGraph._instance = _build_graph()
+        return _LazyGraph._instance(*args, **kwargs)
+
+
+graph = _LazyGraph()

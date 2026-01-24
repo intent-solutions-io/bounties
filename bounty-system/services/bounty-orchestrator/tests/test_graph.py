@@ -3,7 +3,10 @@
 import pytest
 from unittest.mock import patch, AsyncMock
 
-from bounty_agent.agent import workflow, get_checkpointer
+# Skip all tests if langgraph not installed
+langgraph = pytest.importorskip("langgraph", reason="langgraph not installed")
+
+from bounty_agent.agent import get_graph, get_checkpointer
 from bounty_agent.state import BountyState
 from bounty_agent.nodes import should_proceed, is_approved
 
@@ -13,7 +16,8 @@ class TestWorkflowStructure:
 
     def test_workflow_has_all_nodes(self):
         """Test that workflow contains all required nodes."""
-        nodes = list(workflow.nodes.keys())
+        graph = get_graph()
+        nodes = list(graph.nodes.keys())
 
         required_nodes = [
             "analyze",
@@ -28,9 +32,10 @@ class TestWorkflowStructure:
 
     def test_workflow_entry_point(self):
         """Test that workflow starts at analyze node."""
+        graph = get_graph()
         # The entry point is set via set_entry_point
         # We can verify by checking the compiled graph's structure
-        assert "analyze" in workflow.nodes
+        assert "analyze" in graph.nodes
 
 
 class TestConditionalEdges:

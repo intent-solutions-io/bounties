@@ -2,6 +2,9 @@
 
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
+
+# Skip all tests if fastapi not installed
+fastapi = pytest.importorskip("fastapi", reason="fastapi not installed")
 from fastapi.testclient import TestClient
 
 from bounty_agent.api import app
