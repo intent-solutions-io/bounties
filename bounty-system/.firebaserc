@@ -1,9 +1,9 @@
 {
   "projects": {
-    "default": "bounty-system-prod"
+    "default": "intentional-bounty"
   },
   "targets": {
-    "bounty-system-prod": {
+    "intentional-bounty": {
       "hosting": {
         "intent": ["intentsolutions-io"],
         "startai": ["startaitools-io"],
