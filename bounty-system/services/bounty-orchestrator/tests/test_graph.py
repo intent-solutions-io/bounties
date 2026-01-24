@@ -165,6 +165,9 @@ class TestCheckpointer:
 
     def test_get_checkpointer_uses_postgres_with_db_url(self):
         """Test that get_checkpointer uses PostgreSQL when DATABASE_URL is set."""
+        # Skip if langgraph-checkpoint-postgres is not installed
+        pytest.importorskip("langgraph.checkpoint.postgres", reason="postgres checkpointer not installed")
+
         # This test requires mocking since we don't have a real DB
         with patch.dict(
             "os.environ", {"DATABASE_URL": "postgresql://user:pass@localhost/db"}

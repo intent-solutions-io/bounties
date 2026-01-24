@@ -78,7 +78,12 @@ def get_checkpointer():
 
     if database_url:
         # Production: Use PostgreSQL with pgvector
-        from langgraph.checkpoint.postgres import PostgresSaver
+        # Try different import paths for compatibility
+        try:
+            from langgraph.checkpoint.postgres import PostgresSaver
+        except ImportError:
+            from psycopg_pool import ConnectionPool
+            from langgraph.checkpoint.postgres import PostgresSaver
 
         return PostgresSaver.from_conn_string(database_url)
     else:

@@ -2,7 +2,7 @@
 
 import os
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from bounty_agent.bobs_brain_client import BobsBrainClient, bob
 
@@ -10,13 +10,13 @@ from bounty_agent.bobs_brain_client import BobsBrainClient, bob
 class TestBobsBrainClient:
     """Tests for the BobsBrainClient class."""
 
-    def test_client_requires_env_var(self):
-        """Test that client fails gracefully without URL."""
+    def test_client_uses_default_without_env_var(self):
+        """Test that client uses default localhost URL without env var."""
         with patch.dict(os.environ, {}, clear=True):
             # Remove BOBS_BRAIN_A2A_URL if it exists
             os.environ.pop("BOBS_BRAIN_A2A_URL", None)
             client = BobsBrainClient()
-            assert client.base_url == ""
+            assert client.base_url == "http://localhost:8080"
 
     def test_client_uses_env_var(self):
         """Test that client uses environment variable."""
@@ -33,9 +33,10 @@ class TestBobsBrainClient:
         with patch.dict(os.environ, {"BOBS_BRAIN_A2A_URL": test_url}):
             client = BobsBrainClient()
 
-            # Mock the httpx client
-            mock_response = AsyncMock()
+            # Mock the httpx client - use MagicMock for sync methods
+            mock_response = MagicMock()
             mock_response.json.return_value = {"response": {"status": "ok"}}
+            mock_response.raise_for_status = MagicMock()
 
             with patch("httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
@@ -71,8 +72,9 @@ class TestBobsBrainClient:
         with patch.dict(os.environ, {"BOBS_BRAIN_A2A_URL": test_url}):
             client = BobsBrainClient()
 
-            mock_response = AsyncMock()
+            mock_response = MagicMock()
             mock_response.json.return_value = {"response": {}}
+            mock_response.raise_for_status = MagicMock()
 
             with patch("httpx.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
