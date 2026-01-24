@@ -3,9 +3,12 @@
  *
  * Manages bounty notifications - new matches, deadlines, PR status changes.
  * Supports Slack webhooks and email notifications.
+ * Persisted to Firestore.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getAdminDb, COLLECTIONS } from '@/lib/firebase-admin';
+import type { QueryDocumentSnapshot, DocumentData } from 'firebase-admin/firestore';
 
 export interface NotificationPreferences {
   userId: string;
@@ -49,10 +52,6 @@ export interface Notification {
   channels: ('slack' | 'email' | 'in_app')[];
 }
 
-// In-memory store for demo (use Firestore in production)
-const notifications: Map<string, Notification[]> = new Map();
-const preferences: Map<string, NotificationPreferences> = new Map();
-
 /**
  * GET /api/notifications - Get user notifications
  */
@@ -63,23 +62,44 @@ export async function GET(request: NextRequest) {
   const limit = parseInt(searchParams.get('limit') || '50', 10);
 
   try {
-    let userNotifications = notifications.get(userId) || [];
+    const db = getAdminDb();
+    const notificationsRef = db
+      .collection(COLLECTIONS.NOTIFICATIONS)
+      .doc(userId)
+      .collection('items');
+
+    let query = notificationsRef.orderBy('createdAt', 'desc').limit(limit);
 
     if (unreadOnly) {
-      userNotifications = userNotifications.filter(n => !n.read);
+      query = notificationsRef
+        .where('read', '==', false)
+        .orderBy('createdAt', 'desc')
+        .limit(limit);
     }
 
-    // Sort by date (newest first) and limit
-    userNotifications = userNotifications
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, limit);
+    const snapshot = await query.get();
+    const notifications: Notification[] = snapshot.docs.map(
+      (doc: QueryDocumentSnapshot<DocumentData>) => ({
+        id: doc.id,
+        ...doc.data(),
+      })
+    ) as Notification[];
 
-    const unreadCount = (notifications.get(userId) || []).filter(n => !n.read).length;
+    // Get unread count
+    const unreadSnapshot = await notificationsRef
+      .where('read', '==', false)
+      .count()
+      .get();
+    const unreadCount = unreadSnapshot.data().count;
+
+    // Get total count
+    const totalSnapshot = await notificationsRef.count().get();
+    const total = totalSnapshot.data().count;
 
     return NextResponse.json({
-      notifications: userNotifications,
+      notifications,
       unreadCount,
-      total: (notifications.get(userId) || []).length,
+      total,
     });
   } catch (error) {
     console.error('Notifications error:', error);
@@ -114,8 +134,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const notification: Notification = {
-      id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    const db = getAdminDb();
+
+    const notification: Omit<Notification, 'id'> = {
       type,
       title,
       message,
@@ -129,12 +150,19 @@ export async function POST(request: NextRequest) {
     };
 
     // Get user preferences
-    const userPrefs = preferences.get(userId);
+    const prefsDoc = await db
+      .collection(COLLECTIONS.NOTIFICATION_PREFERENCES)
+      .doc(userId)
+      .get();
+    const userPrefs = prefsDoc.data() as NotificationPreferences | undefined;
 
     // Send to channels based on preferences
     if (userPrefs?.channels.slack?.enabled && userPrefs.channels.slack.webhookUrl) {
       try {
-        await sendSlackNotification(userPrefs.channels.slack.webhookUrl, notification);
+        await sendSlackNotification(
+          userPrefs.channels.slack.webhookUrl,
+          { ...notification, id: '' }
+        );
         notification.channels.push('slack');
       } catch (e) {
         console.error('Slack notification failed:', e);
@@ -143,21 +171,31 @@ export async function POST(request: NextRequest) {
 
     if (userPrefs?.channels.email?.enabled && userPrefs.channels.email.address) {
       try {
-        await sendEmailNotification(userPrefs.channels.email.address, notification);
+        await sendEmailNotification(
+          userPrefs.channels.email.address,
+          { ...notification, id: '' }
+        );
         notification.channels.push('email');
       } catch (e) {
         console.error('Email notification failed:', e);
       }
     }
 
-    // Store notification
-    const userNotifications = notifications.get(userId) || [];
-    userNotifications.push(notification);
-    notifications.set(userId, userNotifications);
+    // Store notification in Firestore
+    const docRef = await db
+      .collection(COLLECTIONS.NOTIFICATIONS)
+      .doc(userId)
+      .collection('items')
+      .add(notification);
+
+    const createdNotification: Notification = {
+      id: docRef.id,
+      ...notification,
+    };
 
     return NextResponse.json({
       success: true,
-      notification,
+      notification: createdNotification,
     });
   } catch (error) {
     console.error('Create notification error:', error);
@@ -176,23 +214,45 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json();
     const { userId = 'default', notificationIds, markAllRead } = body;
 
-    const userNotifications = notifications.get(userId) || [];
+    const db = getAdminDb();
+    const notificationsRef = db
+      .collection(COLLECTIONS.NOTIFICATIONS)
+      .doc(userId)
+      .collection('items');
 
     if (markAllRead) {
-      userNotifications.forEach(n => (n.read = true));
+      // Get all unread and mark them read
+      const unreadSnapshot = await notificationsRef
+        .where('read', '==', false)
+        .get();
+
+      const batch = db.batch();
+      unreadSnapshot.docs.forEach((doc: QueryDocumentSnapshot<DocumentData>) => {
+        batch.update(doc.ref, { read: true });
+      });
+      await batch.commit();
+
+      return NextResponse.json({
+        success: true,
+        updatedCount: unreadSnapshot.size,
+      });
     } else if (notificationIds && Array.isArray(notificationIds)) {
-      userNotifications.forEach(n => {
-        if (notificationIds.includes(n.id)) {
-          n.read = true;
-        }
+      const batch = db.batch();
+      for (const id of notificationIds) {
+        const docRef = notificationsRef.doc(id);
+        batch.update(docRef, { read: true });
+      }
+      await batch.commit();
+
+      return NextResponse.json({
+        success: true,
+        updatedCount: notificationIds.length,
       });
     }
 
-    notifications.set(userId, userNotifications);
-
     return NextResponse.json({
       success: true,
-      updatedCount: markAllRead ? userNotifications.length : notificationIds?.length || 0,
+      updatedCount: 0,
     });
   } catch (error) {
     console.error('Mark read error:', error);
@@ -213,7 +273,7 @@ async function sendSlackNotification(webhookUrl: string, notification: Notificat
     high_value: ':gem:',
   }[notification.type] || ':bell:';
 
-  const payload = {
+  const payload: { blocks: unknown[] } = {
     blocks: [
       {
         type: 'header',
@@ -242,7 +302,7 @@ async function sendSlackNotification(webhookUrl: string, notification: Notificat
           text: `*Value:* $${notification.bountyValue}`,
         },
       ],
-    } as any);
+    });
   }
 
   if (notification.prUrl) {
@@ -259,7 +319,7 @@ async function sendSlackNotification(webhookUrl: string, notification: Notificat
           url: notification.prUrl,
         },
       ],
-    } as any);
+    });
   }
 
   await fetch(webhookUrl, {
@@ -273,5 +333,5 @@ async function sendSlackNotification(webhookUrl: string, notification: Notificat
 async function sendEmailNotification(email: string, notification: Notification) {
   // In production, integrate with SendGrid, Resend, or similar
   console.log(`[Email] Would send to ${email}:`, notification.title);
-  // For now, just log - implement actual email sending in production
+  // TODO: Implement actual email sending with Resend
 }

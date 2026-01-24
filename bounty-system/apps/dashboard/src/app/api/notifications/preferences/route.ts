@@ -2,9 +2,11 @@
  * Notification Preferences API
  *
  * Manage user notification settings - channels, triggers, filters.
+ * Persisted to Firestore.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getAdminDb, COLLECTIONS } from '@/lib/firebase-admin';
 
 export interface NotificationPreferences {
   userId: string;
@@ -42,9 +44,6 @@ export interface NotificationPreferences {
   updatedAt: string;
 }
 
-// In-memory store (use Firestore in production)
-const preferencesStore: Map<string, NotificationPreferences> = new Map();
-
 // Default preferences
 const DEFAULT_PREFERENCES: Omit<NotificationPreferences, 'userId' | 'updatedAt'> = {
   enabled: true,
@@ -79,15 +78,21 @@ export async function GET(request: NextRequest) {
   const userId = searchParams.get('userId') || 'default';
 
   try {
-    let prefs = preferencesStore.get(userId);
+    const db = getAdminDb();
+    const docRef = db.collection(COLLECTIONS.NOTIFICATION_PREFERENCES).doc(userId);
+    const doc = await docRef.get();
 
-    if (!prefs) {
+    let prefs: NotificationPreferences;
+
+    if (!doc.exists) {
       // Return defaults if no preferences set
       prefs = {
         ...DEFAULT_PREFERENCES,
         userId,
         updatedAt: new Date().toISOString(),
       };
+    } else {
+      prefs = doc.data() as NotificationPreferences;
     }
 
     return NextResponse.json({ preferences: prefs });
@@ -108,12 +113,18 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const { userId = 'default', ...updates } = body;
 
+    const db = getAdminDb();
+    const docRef = db.collection(COLLECTIONS.NOTIFICATION_PREFERENCES).doc(userId);
+    const doc = await docRef.get();
+
     // Get existing or default
-    const existing = preferencesStore.get(userId) || {
-      ...DEFAULT_PREFERENCES,
-      userId,
-      updatedAt: new Date().toISOString(),
-    };
+    const existing = doc.exists
+      ? (doc.data() as NotificationPreferences)
+      : {
+          ...DEFAULT_PREFERENCES,
+          userId,
+          updatedAt: new Date().toISOString(),
+        };
 
     // Merge updates
     const updated: NotificationPreferences = {
@@ -153,7 +164,8 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    preferencesStore.set(userId, updated);
+    // Save to Firestore
+    await docRef.set(updated);
 
     return NextResponse.json({
       success: true,
@@ -176,14 +188,18 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { userId = 'default', channel } = body;
 
-    const prefs = preferencesStore.get(userId);
-    if (!prefs) {
+    const db = getAdminDb();
+    const docRef = db.collection(COLLECTIONS.NOTIFICATION_PREFERENCES).doc(userId);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
       return NextResponse.json(
         { error: 'No preferences configured' },
         { status: 404 }
       );
     }
 
+    const prefs = doc.data() as NotificationPreferences;
     const results: Record<string, { success: boolean; error?: string }> = {};
 
     if (channel === 'slack' || !channel) {
@@ -210,7 +226,7 @@ export async function POST(request: NextRequest) {
 
     if (channel === 'email' || !channel) {
       if (prefs.channels.email?.address) {
-        // In production, send actual test email
+        // In production, send actual test email via Resend
         results.email = { success: true };
         console.log(`[Test] Would send test email to ${prefs.channels.email.address}`);
       } else {

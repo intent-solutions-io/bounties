@@ -3,9 +3,13 @@
  *
  * Endpoint to trigger automation rules - either manually or via cron.
  * Evaluates bounties against rules and performs configured actions.
+ * Uses Firestore for rules and logs.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getAdminDb, COLLECTIONS } from '@/lib/firebase-admin';
+import { AutomationRule, AutomationLog } from '../route';
+import type { QueryDocumentSnapshot, DocumentData } from 'firebase-admin/firestore';
 
 interface TriggerResult {
   ruleId: string;
@@ -37,17 +41,39 @@ export async function POST(request: NextRequest) {
       source, // 'manual' | 'cron' | 'webhook'
     } = body;
 
-    // In production, fetch rules from Firestore
-    // For demo, use sample rules
-    const rules = ruleIds
-      ? getSampleRules().filter(r => ruleIds.includes(r.id))
-      : getSampleRules().filter(r => r.enabled);
+    const db = getAdminDb();
 
-    // In production, fetch bounties from discovery API or Firestore
-    // For demo, use provided bounties or sample data
+    // Fetch rules from Firestore
+    const rulesRef = db
+      .collection(COLLECTIONS.AUTOMATION_RULES)
+      .doc(userId)
+      .collection('rules');
+
+    let rulesQuery = rulesRef.where('enabled', '==', true);
+    const rulesSnapshot = await rulesQuery.get();
+
+    let rules: AutomationRule[] = rulesSnapshot.docs.map(
+      (doc: QueryDocumentSnapshot<DocumentData>) => ({
+        id: doc.id,
+        ...doc.data(),
+      })
+    ) as AutomationRule[];
+
+    // Filter to specific rules if provided
+    if (ruleIds && Array.isArray(ruleIds)) {
+      rules = rules.filter(r => ruleIds.includes(r.id));
+    }
+
+    // If no rules found, use demo rules for development
+    if (rules.length === 0 && !ruleIds) {
+      rules = getSampleRules();
+    }
+
+    // Get bounties to evaluate (from param or sample data for demo)
     const bountiesPool = bounties || getSampleBounties();
 
     const results: TriggerResult[] = [];
+    const logsToWrite: Omit<AutomationLog, 'id'>[] = [];
 
     for (const rule of rules) {
       const result: TriggerResult = {
@@ -69,8 +95,30 @@ export async function POST(request: NextRequest) {
             try {
               await sendNotification(userId, rule, bounty);
               result.actions.notified++;
+              logsToWrite.push({
+                ruleId: rule.id,
+                ruleName: rule.name,
+                type: rule.type,
+                action: 'notify',
+                bountyId: bounty.id,
+                bountyTitle: bounty.title,
+                success: true,
+                timestamp: new Date().toISOString(),
+              });
             } catch (e) {
-              result.errors.push(`Notification failed for ${bounty.id}: ${e}`);
+              const errorMsg = `Notification failed for ${bounty.id}: ${e}`;
+              result.errors.push(errorMsg);
+              logsToWrite.push({
+                ruleId: rule.id,
+                ruleName: rule.name,
+                type: rule.type,
+                action: 'notify',
+                bountyId: bounty.id,
+                bountyTitle: bounty.title,
+                success: false,
+                error: errorMsg,
+                timestamp: new Date().toISOString(),
+              });
             }
           }
 
@@ -78,8 +126,30 @@ export async function POST(request: NextRequest) {
             try {
               await claimBounty(userId, bounty);
               result.actions.claimed++;
+              logsToWrite.push({
+                ruleId: rule.id,
+                ruleName: rule.name,
+                type: rule.type,
+                action: 'claim',
+                bountyId: bounty.id,
+                bountyTitle: bounty.title,
+                success: true,
+                timestamp: new Date().toISOString(),
+              });
             } catch (e) {
-              result.errors.push(`Claim failed for ${bounty.id}: ${e}`);
+              const errorMsg = `Claim failed for ${bounty.id}: ${e}`;
+              result.errors.push(errorMsg);
+              logsToWrite.push({
+                ruleId: rule.id,
+                ruleName: rule.name,
+                type: rule.type,
+                action: 'claim',
+                bountyId: bounty.id,
+                bountyTitle: bounty.title,
+                success: false,
+                error: errorMsg,
+                timestamp: new Date().toISOString(),
+              });
             }
           }
 
@@ -87,17 +157,64 @@ export async function POST(request: NextRequest) {
             try {
               await addToWatchlist(userId, bounty);
               result.actions.watchlisted++;
+              logsToWrite.push({
+                ruleId: rule.id,
+                ruleName: rule.name,
+                type: rule.type,
+                action: 'watchlist',
+                bountyId: bounty.id,
+                bountyTitle: bounty.title,
+                success: true,
+                timestamp: new Date().toISOString(),
+              });
             } catch (e) {
-              result.errors.push(`Watchlist failed for ${bounty.id}: ${e}`);
+              const errorMsg = `Watchlist failed for ${bounty.id}: ${e}`;
+              result.errors.push(errorMsg);
+              logsToWrite.push({
+                ruleId: rule.id,
+                ruleName: rule.name,
+                type: rule.type,
+                action: 'watchlist',
+                bountyId: bounty.id,
+                bountyTitle: bounty.title,
+                success: false,
+                error: errorMsg,
+                timestamp: new Date().toISOString(),
+              });
             }
           }
         }
       }
 
+      // Update rule stats in Firestore (only for real rules, not samples)
+      if (!rule.id.startsWith('sample-')) {
+        const ruleRef = rulesRef.doc(rule.id);
+        await ruleRef.update({
+          'stats.timesTriggered': rule.stats.timesTriggered + 1,
+          'stats.lastTriggered': new Date().toISOString(),
+          'stats.bountiesClaimed': rule.stats.bountiesClaimed + result.actions.claimed,
+        });
+      }
+
       results.push(result);
     }
 
-    // Log the trigger event
+    // Write logs to Firestore
+    if (logsToWrite.length > 0) {
+      const logsRef = db
+        .collection(COLLECTIONS.AUTOMATION_LOGS)
+        .doc(userId)
+        .collection('logs');
+
+      const batch = db.batch();
+      for (const log of logsToWrite) {
+        const logDoc = logsRef.doc();
+        batch.set(logDoc, log);
+      }
+      await batch.commit();
+    }
+
+    // Calculate summary
     const totalMatches = results.reduce((sum, r) => sum + r.matches, 0);
     const totalActions = results.reduce(
       (sum, r) => sum + r.actions.notified + r.actions.claimed + r.actions.watchlisted,
@@ -126,7 +243,7 @@ export async function POST(request: NextRequest) {
 }
 
 // Evaluate if a bounty matches a rule's conditions
-function evaluateBountyAgainstRule(bounty: any, rule: any): boolean {
+function evaluateBountyAgainstRule(bounty: any, rule: AutomationRule): boolean {
   const c = rule.conditions;
 
   // Score checks
@@ -138,7 +255,7 @@ function evaluateBountyAgainstRule(bounty: any, rule: any): boolean {
   if (c.maxValue !== undefined && bounty.value > c.maxValue) return false;
 
   // Technology checks
-  if (c.technologies?.length > 0) {
+  if (c.technologies?.length && c.technologies.length > 0) {
     const bountyTechs = bounty.technologies || [];
     const hasMatch = c.technologies.some((t: string) =>
       bountyTechs.some((bt: string) => bt.toLowerCase() === t.toLowerCase())
@@ -146,7 +263,7 @@ function evaluateBountyAgainstRule(bounty: any, rule: any): boolean {
     if (!hasMatch) return false;
   }
 
-  if (c.excludeTechnologies?.length > 0) {
+  if (c.excludeTechnologies?.length && c.excludeTechnologies.length > 0) {
     const bountyTechs = bounty.technologies || [];
     const hasExcluded = c.excludeTechnologies.some((t: string) =>
       bountyTechs.some((bt: string) => bt.toLowerCase() === t.toLowerCase())
@@ -155,11 +272,11 @@ function evaluateBountyAgainstRule(bounty: any, rule: any): boolean {
   }
 
   // Repo/org checks
-  if (c.repos?.length > 0 && !c.repos.includes(bounty.repo)) return false;
-  if (c.orgs?.length > 0 && !c.orgs.includes(bounty.org)) return false;
+  if (c.repos?.length && c.repos.length > 0 && !c.repos.includes(bounty.repo)) return false;
+  if (c.orgs?.length && c.orgs.length > 0 && !c.orgs.includes(bounty.org)) return false;
 
   // Label checks
-  if (c.labels?.length > 0) {
+  if (c.labels?.length && c.labels.length > 0) {
     const bountyLabels = bounty.labels || [];
     const hasLabel = c.labels.some((l: string) =>
       bountyLabels.some((bl: string) => bl.toLowerCase() === l.toLowerCase())
@@ -167,7 +284,7 @@ function evaluateBountyAgainstRule(bounty: any, rule: any): boolean {
     if (!hasLabel) return false;
   }
 
-  if (c.excludeLabels?.length > 0) {
+  if (c.excludeLabels?.length && c.excludeLabels.length > 0) {
     const bountyLabels = bounty.labels || [];
     const hasExcluded = c.excludeLabels.some((l: string) =>
       bountyLabels.some((bl: string) => bl.toLowerCase() === l.toLowerCase())
@@ -182,7 +299,7 @@ function evaluateBountyAgainstRule(bounty: any, rule: any): boolean {
 }
 
 // Placeholder: Send notification
-async function sendNotification(userId: string, rule: any, bounty: any) {
+async function sendNotification(userId: string, rule: AutomationRule, bounty: any) {
   console.log(`[Notification] User ${userId}: Rule "${rule.name}" matched bounty "${bounty.title}"`);
   // In production, call /api/notifications to send actual notification
 }
@@ -199,11 +316,11 @@ async function addToWatchlist(userId: string, bounty: any) {
   // In production, save to Firestore watchlist collection
 }
 
-// Sample rules for demo
-function getSampleRules() {
+// Sample rules for demo/development
+function getSampleRules(): AutomationRule[] {
   return [
     {
-      id: 'rule-1',
+      id: 'sample-1',
       name: 'High-value TypeScript bounties',
       enabled: true,
       type: 'auto_claim',
@@ -218,9 +335,15 @@ function getSampleRules() {
         autoClaim: false,
         addToWatchlist: true,
       },
+      stats: {
+        timesTriggered: 0,
+        bountiesClaimed: 0,
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     },
     {
-      id: 'rule-2',
+      id: 'sample-2',
       name: 'Quick Rust wins',
       enabled: true,
       type: 'auto_claim',
@@ -233,11 +356,17 @@ function getSampleRules() {
         notify: true,
         autoClaim: true,
       },
+      stats: {
+        timesTriggered: 0,
+        bountiesClaimed: 0,
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     },
   ];
 }
 
-// Sample bounties for demo
+// Sample bounties for demo/development
 function getSampleBounties() {
   return [
     {
