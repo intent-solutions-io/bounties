@@ -121,7 +121,7 @@ class TestApproveEndpoint:
             # Verify state was updated
             mock_graph.update_state.assert_called_once()
             call_args = mock_graph.update_state.call_args
-            assert call_args[0][1] == {"human_approved": True}
+            assert call_args[0][1] == {"human_approved": True, "phase": "D"}
 
 
 class TestReposEndpoint:
