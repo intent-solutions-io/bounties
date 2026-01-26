@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Sidebar } from '@/components/layout/sidebar';
+import { BottomNav } from '@/components/layout/bottom-nav';
 
 export default function DashboardLayout({
   children,
@@ -33,10 +34,18 @@ export default function DashboardLayout({
 
   return (
     <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto">
+      {/* Desktop: Sidebar */}
+      <div className="hidden md:block">
+        <Sidebar />
+      </div>
+
+      {/* Main content with mobile padding for bottom nav */}
+      <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
         {children}
       </main>
+
+      {/* Mobile: Bottom Navigation */}
+      <BottomNav />
     </div>
   );
 }
