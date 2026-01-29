@@ -21,3 +21,24 @@ __pycache__/
 # Claude
 .claude/
 .beads/
+
+# Environment files with secrets
+.env
+.env.local
+.env.production
+.env.*.local
+tools/.env
+bounty-system/**/.env
+bounty-system/**/.env.local
+bounty-system/**/.env.production
+
+# Sensitive documentation
+postgresql-setup-manual.md
+postgresql-setup-manual.pdf
+valiant-ai-engineer-cover-letter.md
+valiant-ai-engineer-cover-letter.pdf
+
+# Additional cloned repos
+vertex-ai-samples/
+zio-blocks/
+claude-cookbooks/
