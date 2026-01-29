@@ -1,13 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Bell, AlertTriangle, CheckCircle, MessageSquare, GitPullRequest, DollarSign } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Bell, AlertTriangle, CheckCircle, MessageSquare, GitPullRequest, DollarSign, RefreshCw } from 'lucide-react';
 import { Header } from '@/components/layout/header';
 import { formatDistanceToNow } from 'date-fns';
+import { useNotifications, type Notification } from '@/lib/hooks/use-notifications';
+
+type AlertType = 'new_bounty' | 'competition' | 'pr_merged' | 'comment' | 'payment' | 'deadline' | 'pr_status' | 'completed' | 'high_value';
 
 interface Alert {
   id: string;
-  type: 'new_bounty' | 'competition' | 'pr_merged' | 'comment' | 'payment';
+  type: AlertType;
   title: string;
   message: string;
   bountyId?: string;
@@ -15,55 +18,19 @@ interface Alert {
   read: boolean;
 }
 
-// Mock data - will be replaced with real API calls
-const mockAlerts: Alert[] = [
-  {
-    id: '1',
-    type: 'new_bounty',
-    title: 'New bounty matches your skills',
-    message: '"Add TypeScript types" - $300 at screenpipe/screenpipe',
-    bountyId: 'sp-123',
-    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
-    read: false,
-  },
-  {
-    id: '2',
-    type: 'competition',
-    title: 'Competing PR opened',
-    message: 'PR #4521 by @otherdev on "Fix OAuth refresh"',
-    bountyId: 'ph-456',
-    timestamp: new Date(Date.now() - 45 * 60 * 1000),
-    read: false,
-  },
-  {
-    id: '3',
-    type: 'pr_merged',
-    title: 'PR merged & payment confirmed',
-    message: '"Fix date picker" - $100 at calcom/cal.com',
-    bountyId: 'cc-789',
-    timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000),
-    read: true,
-  },
-  {
-    id: '4',
-    type: 'comment',
-    title: 'Maintainer commented on your PR',
-    message: '"Looks good, minor change needed" - posthog/posthog #1234',
-    bountyId: 'ph-101',
-    timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000),
-    read: true,
-  },
-];
-
-function getAlertIcon(type: Alert['type']) {
+function getAlertIcon(type: AlertType) {
   switch (type) {
     case 'new_bounty':
+    case 'high_value':
       return <Bell className="h-5 w-5 text-blue-500" />;
     case 'competition':
+    case 'deadline':
       return <AlertTriangle className="h-5 w-5 text-yellow-500" />;
     case 'pr_merged':
+    case 'completed':
       return <CheckCircle className="h-5 w-5 text-green-500" />;
     case 'comment':
+    case 'pr_status':
       return <MessageSquare className="h-5 w-5 text-purple-500" />;
     case 'payment':
       return <DollarSign className="h-5 w-5 text-green-500" />;
@@ -84,27 +51,58 @@ function groupAlertsByDate(alerts: Alert[]): { today: Alert[]; yesterday: Alert[
   };
 }
 
+// Convert API notification to Alert format
+function toAlert(notification: Notification): Alert {
+  return {
+    id: notification.id,
+    type: notification.type as AlertType,
+    title: notification.title,
+    message: notification.message,
+    bountyId: notification.bountyId,
+    timestamp: new Date(notification.createdAt),
+    read: notification.read,
+  };
+}
+
 export default function AlertsPage() {
-  const [alerts, setAlerts] = useState<Alert[]>(mockAlerts);
+  const {
+    notifications,
+    unreadCount,
+    loading,
+    error,
+    refresh,
+    markAsRead: markNotificationAsRead,
+    markAllAsRead,
+  } = useNotifications({ autoFetch: true });
+
+  // Convert notifications to alerts
+  const alerts = useMemo(() => notifications.map(toAlert), [notifications]);
   const grouped = groupAlertsByDate(alerts);
 
-  const markAsRead = (id: string) => {
-    setAlerts(prev => prev.map(a => a.id === id ? { ...a, read: true } : a));
+  const handleMarkAsRead = (id: string) => {
+    markNotificationAsRead([id]);
   };
-
-  const unreadCount = alerts.filter(a => !a.read).length;
 
   return (
     <>
       {/* Mobile header */}
       <div className="md:hidden">
         <div className="flex items-center justify-between bg-white px-4 py-4 dark:bg-gray-800">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Alerts</h1>
-          {unreadCount > 0 && (
-            <span className="rounded-full bg-primary-500 px-2.5 py-0.5 text-xs font-medium text-white">
-              {unreadCount} new
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-bold text-gray-900 dark:text-white">Alerts</h1>
+            {unreadCount > 0 && (
+              <span className="rounded-full bg-primary-500 px-2.5 py-0.5 text-xs font-medium text-white">
+                {unreadCount} new
+              </span>
+            )}
+          </div>
+          <button
+            onClick={refresh}
+            disabled={loading}
+            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            <RefreshCw className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
         </div>
       </div>
 
@@ -114,6 +112,38 @@ export default function AlertsPage() {
       </div>
 
       <div className="p-4 md:p-6">
+        {/* Loading state */}
+        {loading && alerts.length === 0 && (
+          <div className="flex items-center justify-center py-12">
+            <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
+          </div>
+        )}
+
+        {/* Error state */}
+        {error && (
+          <div className="mb-6 rounded-lg bg-red-50 p-4 text-red-700 dark:bg-red-900/20 dark:text-red-400">
+            <p className="text-sm">{error}</p>
+            <button
+              onClick={refresh}
+              className="mt-2 text-sm font-medium underline"
+            >
+              Try again
+            </button>
+          </div>
+        )}
+
+        {/* Mark all as read button */}
+        {unreadCount > 0 && (
+          <div className="mb-4 flex justify-end">
+            <button
+              onClick={markAllAsRead}
+              className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400"
+            >
+              Mark all as read
+            </button>
+          </div>
+        )}
+
         {/* Today */}
         {grouped.today.length > 0 && (
           <div className="mb-6">
@@ -124,7 +154,7 @@ export default function AlertsPage() {
               {grouped.today.map((alert) => (
                 <button
                   key={alert.id}
-                  onClick={() => markAsRead(alert.id)}
+                  onClick={() => handleMarkAsRead(alert.id)}
                   className={`w-full rounded-xl p-4 text-left transition-colors ${
                     alert.read
                       ? 'bg-white dark:bg-gray-800'
@@ -172,7 +202,7 @@ export default function AlertsPage() {
               {grouped.yesterday.map((alert) => (
                 <button
                   key={alert.id}
-                  onClick={() => markAsRead(alert.id)}
+                  onClick={() => handleMarkAsRead(alert.id)}
                   className={`w-full rounded-xl p-4 text-left transition-colors ${
                     alert.read
                       ? 'bg-white dark:bg-gray-800'
@@ -220,7 +250,7 @@ export default function AlertsPage() {
               {grouped.older.map((alert) => (
                 <button
                   key={alert.id}
-                  onClick={() => markAsRead(alert.id)}
+                  onClick={() => handleMarkAsRead(alert.id)}
                   className="w-full rounded-xl bg-white p-4 text-left transition-colors dark:bg-gray-800"
                 >
                   <div className="flex gap-3">
@@ -246,7 +276,7 @@ export default function AlertsPage() {
         )}
 
         {/* Empty state */}
-        {alerts.length === 0 && (
+        {!loading && alerts.length === 0 && !error && (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <Bell className="h-12 w-12 text-gray-300 dark:text-gray-600" />
             <h3 className="mt-4 text-lg font-medium text-gray-900 dark:text-white">
