@@ -1,8 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { formatDistanceToNow, format } from 'date-fns';
+import { formatDistanceToNow, format, differenceInDays } from 'date-fns';
 import {
   ArrowLeft,
   ExternalLink,
@@ -15,12 +16,19 @@ import {
   CheckCircle,
   XCircle,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Users,
+  Shield,
+  BookOpen,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { Header } from '@/components/layout/header';
 import { useBounty } from '@/lib/hooks/use-bounties';
 import { useProofs } from '@/lib/hooks/use-proofs';
 import { useWorkflow } from '@/lib/hooks/use-workflow';
+import { useCompetition } from '@/lib/hooks/use-competition';
+import { useGuidelines } from '@/lib/hooks/use-guidelines';
 
 const statusColors: Record<string, string> = {
   open: 'bg-green-100 text-green-800',
@@ -36,6 +44,7 @@ const statusColors: Record<string, string> = {
 export default function BountyDetailPage() {
   const params = useParams();
   const id = params.id as string;
+  const [showGuidelines, setShowGuidelines] = useState(false);
 
   const { bounty, loading: bountyLoading } = useBounty(id);
   const { proofs, loading: proofsLoading } = useProofs(id);
@@ -47,6 +56,66 @@ export default function BountyDetailPage() {
     approveExecution,
     rejectExecution,
   } = useWorkflow(id);
+
+  // Phase 2: Competition detection
+  const { data: competition, loading: competitionLoading } = useCompetition(
+    bounty?.repo,
+    bounty?.issue
+  );
+
+  // Phase 2: Guidelines
+  const { data: guidelines, loading: guidelinesLoading } = useGuidelines(bounty?.repo);
+
+  // Calculate staleness
+  const getStaleness = () => {
+    if (!bounty?.createdAt) return { days: 0, level: 'fresh' as const };
+    const days = differenceInDays(new Date(), new Date(bounty.createdAt));
+    const level = days <= 3 ? 'fresh' : days <= 7 ? 'aging' : 'stale';
+    return { days, level };
+  };
+
+  // Calculate risk assessment
+  const getRiskAssessment = () => {
+    const staleness = getStaleness();
+    let score = 100;
+    const factors: { label: string; status: 'good' | 'warn' | 'bad'; detail: string }[] = [];
+
+    // Competition factor
+    if (competition?.hasCompetition) {
+      const prCount = competition.competingPRs.length;
+      if (prCount >= 3) {
+        score -= 30;
+        factors.push({ label: 'Competition', status: 'bad', detail: `${prCount} competing PRs` });
+      } else if (prCount > 0) {
+        score -= 15;
+        factors.push({ label: 'Competition', status: 'warn', detail: `${prCount} competing PR(s)` });
+      }
+    } else {
+      factors.push({ label: 'Competition', status: 'good', detail: 'No competing PRs' });
+    }
+
+    // Staleness factor
+    if (staleness.level === 'stale') {
+      score -= 25;
+      factors.push({ label: 'Freshness', status: 'bad', detail: `${staleness.days} days old` });
+    } else if (staleness.level === 'aging') {
+      score -= 10;
+      factors.push({ label: 'Freshness', status: 'warn', detail: `${staleness.days} days old` });
+    } else {
+      factors.push({ label: 'Freshness', status: 'good', detail: 'Posted recently' });
+    }
+
+    // Guidelines factor
+    if (guidelines?.found) {
+      factors.push({ label: 'Guidelines', status: 'good', detail: 'CONTRIBUTING.md available' });
+    } else {
+      score -= 10;
+      factors.push({ label: 'Guidelines', status: 'warn', detail: 'No CONTRIBUTING.md' });
+    }
+
+    const level = score >= 80 ? 'low' : score >= 50 ? 'medium' : 'high';
+    return { score, level, factors };
+  };
 
   if (bountyLoading) {
     return (
@@ -360,6 +429,150 @@ export default function BountyDetailPage() {
                       </p>
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+
+            {/* Risk Assessment Card */}
+            {(() => {
+              const risk = getRiskAssessment();
+              const staleness = getStaleness();
+              return (
+                <div className="rounded-xl bg-white p-6 shadow-sm dark:bg-gray-800">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                      risk.level === 'low' ? 'bg-green-100 dark:bg-green-900/30' :
+                      risk.level === 'medium' ? 'bg-yellow-100 dark:bg-yellow-900/30' :
+                      'bg-red-100 dark:bg-red-900/30'
+                    }`}>
+                      <Shield className={`h-5 w-5 ${
+                        risk.level === 'low' ? 'text-green-600 dark:text-green-400' :
+                        risk.level === 'medium' ? 'text-yellow-600 dark:text-yellow-400' :
+                        'text-red-600 dark:text-red-400'
+                      }`} />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900 dark:text-white">Risk Assessment</h3>
+                      <p className={`text-sm font-medium ${
+                        risk.level === 'low' ? 'text-green-600 dark:text-green-400' :
+                        risk.level === 'medium' ? 'text-yellow-600 dark:text-yellow-400' :
+                        'text-red-600 dark:text-red-400'
+                      }`}>
+                        {risk.level.toUpperCase()} RISK
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {risk.factors.map((factor, i) => (
+                      <div key={i} className="flex items-center justify-between text-sm">
+                        <span className="text-gray-600 dark:text-gray-400">{factor.label}</span>
+                        <span className={`flex items-center gap-1 ${
+                          factor.status === 'good' ? 'text-green-600 dark:text-green-400' :
+                          factor.status === 'warn' ? 'text-yellow-600 dark:text-yellow-400' :
+                          'text-red-600 dark:text-red-400'
+                        }`}>
+                          {factor.status === 'good' ? <CheckCircle className="h-3 w-3" /> :
+                           factor.status === 'warn' ? <AlertCircle className="h-3 w-3" /> :
+                           <XCircle className="h-3 w-3" />}
+                          {factor.detail}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Competition Card */}
+            <div className="rounded-xl bg-white p-6 shadow-sm dark:bg-gray-800">
+              <div className="flex items-center gap-3 mb-4">
+                <div className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                  competition?.hasCompetition
+                    ? 'bg-yellow-100 dark:bg-yellow-900/30'
+                    : 'bg-green-100 dark:bg-green-900/30'
+                }`}>
+                  <Users className={`h-5 w-5 ${
+                    competition?.hasCompetition
+                      ? 'text-yellow-600 dark:text-yellow-400'
+                      : 'text-green-600 dark:text-green-400'
+                  }`} />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900 dark:text-white">Competition</h3>
+                  {competitionLoading ? (
+                    <p className="text-sm text-gray-500">Checking...</p>
+                  ) : competition?.hasCompetition ? (
+                    <p className="text-sm text-yellow-600 dark:text-yellow-400">
+                      {competition.competingPRs.length} competing PR(s)
+                    </p>
+                  ) : (
+                    <p className="text-sm text-green-600 dark:text-green-400">No competition</p>
+                  )}
+                </div>
+              </div>
+              {competition?.competingPRs && competition.competingPRs.length > 0 && (
+                <div className="space-y-2">
+                  {competition.competingPRs.map((pr) => (
+                    <a
+                      key={pr.number}
+                      href={pr.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between rounded-lg bg-gray-50 p-2 text-sm hover:bg-gray-100 dark:bg-gray-700/50 dark:hover:bg-gray-700"
+                    >
+                      <div className="flex items-center gap-2">
+                        <GitPullRequest className="h-4 w-4 text-gray-500" />
+                        <span className="text-gray-900 dark:text-white">#{pr.number}</span>
+                        {pr.draft && (
+                          <span className="text-xs text-gray-500">(draft)</span>
+                        )}
+                      </div>
+                      <span className="text-xs text-gray-500">@{pr.author}</span>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Guidelines Card */}
+            <div className="rounded-xl bg-white p-6 shadow-sm dark:bg-gray-800">
+              <button
+                onClick={() => setShowGuidelines(!showGuidelines)}
+                className="flex w-full items-center justify-between"
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-full ${
+                    guidelines?.found
+                      ? 'bg-blue-100 dark:bg-blue-900/30'
+                      : 'bg-gray-100 dark:bg-gray-700'
+                  }`}>
+                    <BookOpen className={`h-5 w-5 ${
+                      guidelines?.found
+                        ? 'text-blue-600 dark:text-blue-400'
+                        : 'text-gray-500'
+                    }`} />
+                  </div>
+                  <div className="text-left">
+                    <h3 className="font-semibold text-gray-900 dark:text-white">Guidelines</h3>
+                    {guidelinesLoading ? (
+                      <p className="text-sm text-gray-500">Loading...</p>
+                    ) : guidelines?.found ? (
+                      <p className="text-sm text-blue-600 dark:text-blue-400">CONTRIBUTING.md</p>
+                    ) : (
+                      <p className="text-sm text-gray-500">Not available</p>
+                    )}
+                  </div>
+                </div>
+                {guidelines?.found && (
+                  showGuidelines ? <ChevronUp className="h-5 w-5 text-gray-500" /> : <ChevronDown className="h-5 w-5 text-gray-500" />
+                )}
+              </button>
+              {showGuidelines && guidelines?.content && (
+                <div className="mt-4 max-h-64 overflow-y-auto rounded-lg bg-gray-50 p-4 text-sm dark:bg-gray-700/50">
+                  <pre className="whitespace-pre-wrap font-mono text-xs text-gray-700 dark:text-gray-300">
+                    {guidelines.content.slice(0, 2000)}
+                    {guidelines.content.length > 2000 && '...'}
+                  </pre>
                 </div>
               )}
             </div>
