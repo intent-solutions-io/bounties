@@ -22,6 +22,8 @@ import {
   BookOpen,
   ChevronDown,
   ChevronUp,
+  User,
+  Activity,
 } from 'lucide-react';
 import { Header } from '@/components/layout/header';
 import { useBounty } from '@/lib/hooks/use-bounties';
@@ -29,6 +31,7 @@ import { useProofs } from '@/lib/hooks/use-proofs';
 import { useWorkflow } from '@/lib/hooks/use-workflow';
 import { useCompetition } from '@/lib/hooks/use-competition';
 import { useGuidelines } from '@/lib/hooks/use-guidelines';
+import { useMaintainer } from '@/lib/hooks/use-maintainer';
 
 const statusColors: Record<string, string> = {
   open: 'bg-green-100 text-green-800',
@@ -65,6 +68,9 @@ export default function BountyDetailPage() {
 
   // Phase 2: Guidelines
   const { data: guidelines, loading: guidelinesLoading } = useGuidelines(bounty?.repo);
+
+  // Phase 3: Maintainer profile
+  const { profile: maintainer, loading: maintainerLoading } = useMaintainer(bounty?.repo);
 
   // Calculate staleness
   const getStaleness = () => {
@@ -573,6 +579,84 @@ export default function BountyDetailPage() {
                     {guidelines.content.slice(0, 2000)}
                     {guidelines.content.length > 2000 && '...'}
                   </pre>
+                </div>
+              )}
+            </div>
+
+            {/* Maintainer Card */}
+            <div className="rounded-xl bg-white p-6 shadow-sm dark:bg-gray-800">
+              <h3 className="mb-4 font-semibold text-gray-900 dark:text-white">Maintainer</h3>
+              {maintainerLoading ? (
+                <div className="flex items-center gap-3">
+                  <div className="h-12 w-12 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700" />
+                  <div className="space-y-2">
+                    <div className="h-4 w-24 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                    <div className="h-3 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                  </div>
+                </div>
+              ) : maintainer ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={maintainer.avatarUrl}
+                      alt={maintainer.username}
+                      className="h-12 w-12 rounded-full"
+                    />
+                    <div>
+                      <a
+                        href={`https://github.com/${maintainer.username}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-gray-900 hover:text-primary-600 dark:text-white dark:hover:text-primary-400"
+                      >
+                        @{maintainer.username}
+                      </a>
+                      {maintainer.name && (
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{maintainer.name}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 text-gray-600 dark:text-gray-400">
+                        <Activity className="h-4 w-4" />
+                        Responsiveness
+                      </span>
+                      <span className={`font-medium ${
+                        maintainer.responsiveness === 'high' ? 'text-green-600 dark:text-green-400' :
+                        maintainer.responsiveness === 'medium' ? 'text-yellow-600 dark:text-yellow-400' :
+                        maintainer.responsiveness === 'low' ? 'text-red-600 dark:text-red-400' :
+                        'text-gray-500'
+                      }`}>
+                        {maintainer.responsiveness.charAt(0).toUpperCase() + maintainer.responsiveness.slice(1)}
+                      </span>
+                    </div>
+                    {maintainer.recentActivity.lastActive && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600 dark:text-gray-400">Last active</span>
+                        <span className="text-gray-900 dark:text-white">
+                          {formatDistanceToNow(new Date(maintainer.recentActivity.lastActive), { addSuffix: true })}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Commits (year)</span>
+                      <span className="text-gray-900 dark:text-white">
+                        {maintainer.recentActivity.commitsLast30Days}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">PRs reviewed</span>
+                      <span className="text-gray-900 dark:text-white">
+                        {maintainer.recentActivity.prsReviewedLast30Days}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 text-gray-500 dark:text-gray-400">
+                  <User className="h-8 w-8" />
+                  <span className="text-sm">Maintainer info not available</span>
                 </div>
               )}
             </div>
