@@ -19,9 +19,9 @@ export interface MaintainerProfile {
   followers: number;
   recentActivity: {
     lastActive: string | null;
-    commitsLast30Days: number;
-    issuesClosedLast30Days: number;
-    prsReviewedLast30Days: number;
+    totalCommits: number;
+    totalIssues: number;
+    totalPrsReviewed: number;
   };
   responsiveness: 'high' | 'medium' | 'low' | 'unknown';
 }

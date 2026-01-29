@@ -640,15 +640,15 @@ export default function BountyDetailPage() {
                       </div>
                     )}
                     <div className="flex items-center justify-between">
-                      <span className="text-gray-600 dark:text-gray-400">Commits (year)</span>
+                      <span className="text-gray-600 dark:text-gray-400">Total commits</span>
                       <span className="text-gray-900 dark:text-white">
-                        {maintainer.recentActivity.commitsLast30Days}
+                        {maintainer.recentActivity.totalCommits}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-gray-600 dark:text-gray-400">PRs reviewed</span>
+                      <span className="text-gray-600 dark:text-gray-400">Total PRs reviewed</span>
                       <span className="text-gray-900 dark:text-white">
-                        {maintainer.recentActivity.prsReviewedLast30Days}
+                        {maintainer.recentActivity.totalPrsReviewed}
                       </span>
                     </div>
                   </div>
