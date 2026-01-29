@@ -8,112 +8,42 @@
  * Mobile-first card-based UI with risk assessment.
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Search, AlertCircle, RefreshCw, Settings } from 'lucide-react';
 import { Header } from '@/components/layout/header';
 import { BountyCard, type BountyCardData } from '@/components/bounty/bounty-card';
-
-interface BountyScore {
-  total: number;
-  grade: string;
-  recommendation: 'claim' | 'consider' | 'skip';
-  value: { normalized: number; raw: number | null; hourlyRate: number };
-  complexity: { estimated: number; linesEstimate: number };
-  competition: { score: number; claimants: number; openPRs?: number; submissions?: number };
-  fit: { score: number; matchedTech: string[]; unknownTech: string[] };
-  warnings: string[];
-  notes: string[];
-}
-
-interface DiscoveredBounty {
-  id: string;
-  title: string;
-  description?: string;
-  value: number | null;
-  labels?: string[];
-  technologies: string[];
-  repo: string;
-  org: string;
-  sourceUrl: string;
-  claimants: number;
-  openPRs?: number;
-  submissions?: number;
-  score: BountyScore;
-  postedAt?: string;
-}
+import { useDiscoverBounties, type DiscoveredBounty } from '@/lib/hooks/use-discover';
 
 type Source = 'github' | 'algora' | 'all';
 type Filter = 'all' | 'claim' | 'consider' | 'skip';
 
 export default function DiscoverPage() {
-  const [source, setSource] = useState<Source>('github');
+  const [source, setSource] = useState<Source>('all');
   const [filter, setFilter] = useState<Filter>('all');
   const [searchOrg, setSearchOrg] = useState('');
   const [searchRepo, setSearchRepo] = useState('');
   const [searchLabel, setSearchLabel] = useState('bounty');
-  const [bounties, setBounties] = useState<DiscoveredBounty[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lastSearch, setLastSearch] = useState<string>('');
   const [showFilters, setShowFilters] = useState(false);
-  const [selectedBounty, setSelectedBounty] = useState<DiscoveredBounty | null>(null);
 
-  const discover = async () => {
-    setLoading(true);
-    setError(null);
+  // Use the discovery hook with auto-fetch
+  const {
+    bounties,
+    loading,
+    error,
+    lastQuery,
+    refresh,
+  } = useDiscoverBounties({
+    source,
+    org: searchOrg || undefined,
+    repo: searchRepo || undefined,
+    label: searchLabel,
+    autoFetch: true,
+  });
 
-    try {
-      const results: DiscoveredBounty[] = [];
-
-      // Fetch from GitHub
-      if (source === 'github' || source === 'all') {
-        const params = new URLSearchParams();
-        if (searchOrg) params.set('org', searchOrg);
-        if (searchRepo) params.set('repo', searchRepo);
-        if (searchLabel) params.set('label', searchLabel);
-        params.set('limit', '30');
-
-        const res = await fetch(`/api/discover?${params}`);
-        const data = await res.json();
-
-        if (data.error) {
-          throw new Error(data.error);
-        }
-
-        results.push(...(data.bounties || []).map((b: DiscoveredBounty) => ({
-          ...b,
-          source: 'github'
-        })));
-        setLastSearch(data.query || '');
-      }
-
-      // Fetch from Algora
-      if (source === 'algora' || source === 'all') {
-        const params = new URLSearchParams();
-        params.set('limit', '30');
-        params.set('status', 'OPEN');
-
-        const res = await fetch(`/api/discover/algora?${params}`);
-        const data = await res.json();
-
-        if (!data.error) {
-          results.push(...(data.bounties || []).map((b: DiscoveredBounty) => ({
-            ...b,
-            source: 'algora'
-          })));
-        }
-      }
-
-      // Sort by score
-      results.sort((a, b) => b.score.total - a.score.total);
-      setBounties(results);
-
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Discovery failed');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Manual search with current filters
+  const discover = useCallback(() => {
+    refresh();
+  }, [refresh]);
 
   const filteredBounties = bounties.filter(b => {
     if (filter === 'all') return true;
@@ -123,8 +53,9 @@ export default function DiscoverPage() {
 
   // Convert API response to card format
   const toBountyCardData = (bounty: DiscoveredBounty): BountyCardData => {
-    const staleDays = bounty.postedAt
-      ? Math.floor((Date.now() - new Date(bounty.postedAt).getTime()) / (1000 * 60 * 60 * 24))
+    const postedDate = bounty.createdAt || bounty.updatedAt;
+    const staleDays = postedDate
+      ? Math.floor((Date.now() - new Date(postedDate).getTime()) / (1000 * 60 * 60 * 24))
       : 3;
 
     return {
@@ -149,7 +80,7 @@ export default function DiscoverPage() {
         lastActive: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
       },
       sourceUrl: bounty.sourceUrl,
-      postedAt: bounty.postedAt ? new Date(bounty.postedAt) : new Date(),
+      postedAt: postedDate ? new Date(postedDate) : new Date(),
     };
   };
 
@@ -284,9 +215,9 @@ export default function DiscoverPage() {
               {loading ? 'Searching...' : 'Discover Bounties'}
             </button>
 
-            {lastSearch && (
+            {lastQuery && (
               <span className="text-sm text-gray-500 dark:text-gray-400">
-                Query: {lastSearch}
+                Query: {lastQuery}
               </span>
             )}
           </div>
