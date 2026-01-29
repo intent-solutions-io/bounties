@@ -18,9 +18,9 @@ interface MaintainerProfile {
   followers: number;
   recentActivity: {
     lastActive: string | null;
-    commitsLast30Days: number;
-    issuesClosedLast30Days: number;
-    prsReviewedLast30Days: number;
+    totalCommits: number;
+    totalIssues: number;
+    totalPrsReviewed: number;
   };
   responsiveness: 'high' | 'medium' | 'low' | 'unknown';
 }
@@ -45,7 +45,15 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [owner] = repo.split('/');
+    // Validate repo format (owner/repo)
+    const parts = repo.split('/');
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      return NextResponse.json(
+        { error: 'Invalid repo format. Expected owner/repo' },
+        { status: 400 }
+      );
+    }
+    const [owner] = parts;
 
     // Fetch user profile
     const userRes = await fetch(`https://api.github.com/users/${owner}`, {
@@ -118,15 +126,20 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Calculate responsiveness based on activity
+    // Calculate responsiveness based on activity and recency
     const totalContributions = contributions?.contributionCalendar?.totalContributions || 0;
     let responsiveness: MaintainerProfile['responsiveness'] = 'unknown';
 
-    if (totalContributions > 500) {
+    // Factor in both total activity and recency
+    const daysSinceActive = lastActive
+      ? Math.floor((Date.now() - new Date(lastActive).getTime()) / (1000 * 60 * 60 * 24))
+      : 999;
+
+    if (totalContributions > 500 && daysSinceActive <= 7) {
       responsiveness = 'high';
-    } else if (totalContributions > 100) {
+    } else if (totalContributions > 100 && daysSinceActive <= 30) {
       responsiveness = 'medium';
-    } else if (totalContributions > 0) {
+    } else if (totalContributions > 0 && daysSinceActive <= 90) {
       responsiveness = 'low';
     }
 
@@ -141,9 +154,9 @@ export async function GET(request: NextRequest) {
       followers: user.followers,
       recentActivity: {
         lastActive,
-        commitsLast30Days: contributions?.totalCommitContributions || 0,
-        issuesClosedLast30Days: contributions?.totalIssueContributions || 0,
-        prsReviewedLast30Days: contributions?.totalPullRequestReviewContributions || 0,
+        totalCommits: contributions?.totalCommitContributions || 0,
+        totalIssues: contributions?.totalIssueContributions || 0,
+        totalPrsReviewed: contributions?.totalPullRequestReviewContributions || 0,
       },
       responsiveness,
     };
