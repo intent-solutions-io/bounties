@@ -18,7 +18,7 @@ cal.com,,Double hover fix,$20-50,CLOSED,26441,,NONE,2025-01-04,2025-01-12,REJECT
 cal.com,,App card truncation,$20-50,CLOSED,26440,,NONE,2025-01-04,2025-01-12,REJECTED - line-clamp doesnt work with nested HTML
 feishin,1513,Top songs sort fix,$0,Submitted,1513,,NONE,2025-01-05,,Owner says intended behavior - offered to implement proper parameter approach
 vertex-ai-samples,4393,ADK inline deployment tutorial,$0,MERGED,4393,552,NONE,2025-12-12,2026-01-13,MERGED by gericdong - 32 days to merge
-a2a-samples,419,Bob's Brain A2A demo,$0,Submitted,419,,NONE,2025-12-04,,Foreman-worker pattern demo
+a2a-samples,419,Bob's Brain A2A demo,$0,Submitted,419,,NONE,2025-12-04,,Foreman-worker pattern demo - PINGED 2026-01-31
 ai-card,7,Bob's Brain reference impl,$0,Submitted,7,,NONE,2025-12-03,,Production-grade A2A reference
 anthropic-sdk-typescript,874,Fix broken README link,$0,Submitted,874,,NONE,2025-01-04,,CHANGES_REQUESTED - maintainers questioning value - offered to close
 claude-code,16215,Fix plugin docs links,$0,Submitted,16215,,NONE,2025-01-04,,Awaiting review - no activity
