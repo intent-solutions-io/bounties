@@ -216,19 +216,40 @@ gcloud compute ssh bounty-dev --zone=us-central1-a --command="cd vertex-ai-sampl
 
 ## Bounty Hunting Workflow
 
+### Philosophy: Design Issues First, Not PRs
+
+**Auto-opening PRs is the WRONG default for OSS contributions.**
+
+PRs create "whack-a-mole slopfests" where maintainers must review each submission individually. Instead:
+
+1. **Open a Design Issue** with:
+   - Problem statement
+   - Proposed solution
+   - Diff preview (code changes as markdown)
+   - Test results attached
+   - Screenshots/recordings if UI changes
+
+2. **Let maintainers batch review** - they can approve the approach before you submit a PR
+3. **Only open PR after design approval** - or if maintainer explicitly requests it
+
+This respects maintainer time and avoids wasted effort on rejected approaches.
+
+### Workflow Steps
+
 1. **Research**: Check `000-docs/002-PM-BKLG-bounty-tracker.csv` for open bounties
 2. **Verify**: Check GitHub for competing PRs on the target issue
 3. **Claim**: Comment on issue or use `/bounty` on Algora
 4. **Track**: `bd update <id> --status in_progress`
 5. **Develop**: Follow project-specific guidelines above
 6. **Test**: Run full test suite on cloud VM - ALL TESTS MUST PASS
-7. **Human Approval**: STOP and ask user for approval before submitting PR
-8. **Submit**: PR with required screenshots/videos (only after approval)
-9. **Close**: `bd close <id> --reason "PR #xyz"`
+7. **Human Approval**: STOP and ask Jeremy for approval before ANY external submission
+8. **Design Issue First**: Open issue with diff preview + tests (NOT a PR)
+9. **PR Only After Approval**: Convert to PR only when maintainer approves design
+10. **Close**: `bd close <id> --reason "PR #xyz"`
 
-## MANDATORY: Pre-PR Checklist
+## MANDATORY: Pre-Submission Checklist
 
-**Before submitting ANY pull request, you MUST:**
+**Before submitting ANYTHING to external repos, you MUST:**
 
 1. **Run all tests on cloud VM** - not locally
    ```bash
@@ -239,12 +260,18 @@ gcloud compute ssh bounty-dev --zone=us-central1-a --command="cd vertex-ai-sampl
 
 3. **Run project-specific linters** - no lint errors allowed
 
-4. **ASK USER FOR APPROVAL** - Do NOT submit PR without explicit human approval
+4. **ASK JEREMY FOR APPROVAL** - Do NOT submit anything without explicit human approval
    - Show test results summary
    - Show what files changed
-   - Wait for "yes" or "approved" before creating PR
+   - Show proposed issue/PR content
+   - Wait for "yes" or "approved" before creating
 
-**NEVER auto-submit PRs. Always wait for human approval.**
+5. **Default to Design Issue** - NOT a PR
+   - Include diff preview as markdown code blocks
+   - Attach test output
+   - Let maintainer decide if they want a PR
+
+**NEVER auto-submit PRs. NEVER bypass human approval. Design issues > PRs.**
 
 ## Tools
 
