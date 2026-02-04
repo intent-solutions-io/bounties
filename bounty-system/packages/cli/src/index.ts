@@ -64,7 +64,7 @@ const program = new Command();
 program
   .name('bounty')
   .description('Bounty hunting CLI - track, record, and prove your work')
-  .version('0.1.0');
+  .version('0.2.0');
 
 // Core commands
 program.addCommand(listCommand);

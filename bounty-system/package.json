@@ -1,6 +1,6 @@
 {
   "name": "bounty-system",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Autonomous bounty domination engine with multi-site portal",
   "author": "Jeremy Longshore <jeremy@intentsolutions.io>",
