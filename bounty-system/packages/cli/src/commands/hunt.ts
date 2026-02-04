@@ -113,9 +113,10 @@ export const huntCommand = new Command('hunt')
         LEFT JOIN repo_metrics rm ON i.repo = rm.repo
         LEFT JOIN repo_profiles rp ON i.repo = rp.repo
         WHERE i.state = 'open'
-        AND (i.updated_at_remote IS NULL OR i.updated_at_remote >= ?)
+        AND i.url LIKE '%/issues/%'
+        AND (i.ingested_at >= ? OR i.updated_at_remote >= ?)
         AND (r.is_blocklisted IS NULL OR r.is_blocklisted = 0)`;
-      const args: (string | number)[] = [cutoffIso];
+      const args: (string | number)[] = [cutoffIso, cutoffIso];
 
       // Filter: paid vs rep
       if (options.paid) {
