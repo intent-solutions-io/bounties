@@ -237,6 +237,42 @@ export const huntCommand = new Command('hunt')
               }
             }
 
+            // ═══════════════════════════════════════════════════════════════════
+            // PERSIST ALL FINDINGS TO DATABASE (v10 consolidated schema)
+            // ═══════════════════════════════════════════════════════════════════
+            const now = new Date().toISOString();
+            const daysOld = result.daysSinceUpdate || 0;
+
+            // Update issues_index with ALL validation data
+            await db.execute({
+              sql: `UPDATE issues_index SET
+                      validated_at = ?,
+                      live_state = ?,
+                      competing_prs = ?,
+                      days_since_activity = ?,
+                      state = CASE WHEN ? = 'closed' THEN 'closed' ELSE state END
+                    WHERE url = ?`,
+              args: [
+                now,
+                result.liveState || 'unknown',
+                result.competingPRs || 0,
+                daysOld,
+                result.liveState || 'unknown',
+                result.issue.url
+              ]
+            });
+
+            // Update repos with CONTRIBUTING.md discovery
+            if (result.contributingUrl || result.hasContributing !== undefined) {
+              await db.execute({
+                sql: `UPDATE repos SET
+                        contributing_url = COALESCE(?, contributing_url),
+                        last_validated_at = ?
+                      WHERE repo = ?`,
+                args: [result.contributingUrl || null, now, repo]
+              });
+            }
+
             validated++;
           } catch (error) {
             result.validationError = error instanceof Error ? error.message : 'unknown';

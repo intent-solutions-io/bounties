@@ -216,20 +216,24 @@ export function defaultTimeEstimate(): TimeEstimate {
 
 /**
  * Calculate Expected Value
+ *
+ * @param includeTimeCost - If false, skip opportunity cost calculation (default: false)
+ *                          Set to true to penalize EV based on time estimates
  */
 export function calculateEV(
   payout: number,
   payoutCurrency: string,
   winProbBreakdown: WinProbabilityBreakdown,
   timeEstimate: TimeEstimate,
-  hourlyTarget: number = 100
+  hourlyTarget: number = 100,
+  includeTimeCost: boolean = false  // OFF by default - user decides if worth their time
 ): EVCalculation {
   const winProbability = winProbBreakdown.overall;
 
-  // Opportunity cost = expected time * hourly rate
+  // Opportunity cost = expected time * hourly rate (only if includeTimeCost is true)
   const expectedMinutes = timeEstimate.best;
   const expectedHours = expectedMinutes / 60;
-  const opportunityCost = expectedHours * hourlyTarget;
+  const opportunityCost = includeTimeCost ? expectedHours * hourlyTarget : 0;
 
   // EV = (payout * winProb) - opportunityCost
   const expectedPayout = payout * winProbability;

@@ -11,7 +11,7 @@
 import { getDb } from './db';
 
 // Current schema version
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 /**
  * Migration definitions
@@ -693,6 +693,237 @@ const migrations: Record<number, string[]> = {
 
     // Update schema version
     `INSERT OR REPLACE INTO schema_version (version) VALUES (9)`
+  ],
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // VERSION 10: CONSOLIDATION - One Table to Rule Them All
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PHILOSOPHY: Stop fragmenting data across 28 tables.
+  // - repos = THE ONLY source of truth for repo data
+  // - issues_index = THE ONLY source of truth for issue data
+  // - Migrate existing fragmented data into main tables
+  // - Validation data stays ephemeral (computed on-demand, cached in main tables)
+  10: [
+    // ─────────────────────────────────────────────────────────────────────────
+    // 10.1 REPOS: Add ALL missing columns (one table to rule them all)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // From repo_profiles (has 55 rows with contributing_md, cla_required, etc):
+    `ALTER TABLE repos ADD COLUMN contributing_md TEXT`,
+    `ALTER TABLE repos ADD COLUMN contributing_url TEXT`,
+    `ALTER TABLE repos ADD COLUMN contributing_md_hash TEXT`,
+    `ALTER TABLE repos ADD COLUMN cla_required INTEGER DEFAULT 0`,
+    `ALTER TABLE repos ADD COLUMN cla_url TEXT`,
+    `ALTER TABLE repos ADD COLUMN cla_type TEXT`,
+    `ALTER TABLE repos ADD COLUMN cla_status TEXT DEFAULT 'unknown'`,
+    `ALTER TABLE repos ADD COLUMN dco_required INTEGER DEFAULT 0`,
+    `ALTER TABLE repos ADD COLUMN test_framework TEXT`,
+    `ALTER TABLE repos ADD COLUMN lint_command TEXT`,
+    `ALTER TABLE repos ADD COLUMN build_command TEXT`,
+    `ALTER TABLE repos ADD COLUMN pr_template TEXT`,
+    `ALTER TABLE repos ADD COLUMN pr_naming_convention TEXT`,
+    `ALTER TABLE repos ADD COLUMN languages TEXT`,
+
+    // From repo_profiles (rules + style):
+    `ALTER TABLE repos ADD COLUMN rules_json TEXT`,
+    `ALTER TABLE repos ADD COLUMN rules_summary TEXT`,
+    `ALTER TABLE repos ADD COLUMN style_guide_json TEXT`,
+    `ALTER TABLE repos ADD COLUMN style_guide_summary TEXT`,
+    `ALTER TABLE repos ADD COLUMN style_sampled_at TEXT`,
+
+    // From repo_metrics (TTFG, merge velocity):
+    `ALTER TABLE repos ADD COLUMN ttfg_last_minutes INTEGER`,
+    `ALTER TABLE repos ADD COLUMN ttfg_p50_minutes INTEGER`,
+    `ALTER TABLE repos ADD COLUMN ttfg_p90_minutes INTEGER`,
+    `ALTER TABLE repos ADD COLUMN ci_flake_rate REAL`,
+    `ALTER TABLE repos ADD COLUMN median_merge_minutes INTEGER`,
+    `ALTER TABLE repos ADD COLUMN merge_velocity_days REAL`,
+    `ALTER TABLE repos ADD COLUMN response_time_hours REAL`,
+    `ALTER TABLE repos ADD COLUMN last_bootstrap_at TEXT`,
+
+    // From repo_reputation (payout history):
+    `ALTER TABLE repos ADD COLUMN total_bounties_paid INTEGER DEFAULT 0`,
+    `ALTER TABLE repos ADD COLUMN total_payout_amount REAL DEFAULT 0`,
+    `ALTER TABLE repos ADD COLUMN avg_payout_amount REAL`,
+    `ALTER TABLE repos ADD COLUMN payout_success_rate REAL`,
+    `ALTER TABLE repos ADD COLUMN last_payout_at TEXT`,
+    `ALTER TABLE repos ADD COLUMN bounties_posted_90d INTEGER DEFAULT 0`,
+    `ALTER TABLE repos ADD COLUMN bounties_claimed_90d INTEGER DEFAULT 0`,
+    `ALTER TABLE repos ADD COLUMN bounties_paid_90d INTEGER DEFAULT 0`,
+    `ALTER TABLE repos ADD COLUMN avg_time_to_merge_hours INTEGER`,
+    `ALTER TABLE repos ADD COLUMN avg_review_rounds REAL`,
+    `ALTER TABLE repos ADD COLUMN maintainer_response_hours INTEGER`,
+    `ALTER TABLE repos ADD COLUMN reputation_score INTEGER DEFAULT 50`,
+
+    // Bounty activity (computed from issues_index):
+    `ALTER TABLE repos ADD COLUMN open_bounty_count INTEGER DEFAULT 0`,
+    `ALTER TABLE repos ADD COLUMN closed_bounty_count INTEGER DEFAULT 0`,
+    `ALTER TABLE repos ADD COLUMN avg_bounty_close_days REAL`,
+
+    // Validation tracking (when we last checked):
+    `ALTER TABLE repos ADD COLUMN last_validated_at TEXT`,
+    `ALTER TABLE repos ADD COLUMN last_full_sync_at TEXT`,
+    `ALTER TABLE repos ADD COLUMN validation_error TEXT`,
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 10.2 MIGRATE DATA: Move fragmented data into repos
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Copy from repo_profiles → repos (55 rows with actual data)
+    `UPDATE repos SET
+      contributing_md = (SELECT contributing_md FROM repo_profiles WHERE repo_profiles.repo = repos.repo),
+      contributing_url = (SELECT contributing_url FROM repo_profiles WHERE repo_profiles.repo = repos.repo),
+      cla_required = COALESCE((SELECT cla_required FROM repo_profiles WHERE repo_profiles.repo = repos.repo), 0),
+      cla_url = (SELECT cla_url FROM repo_profiles WHERE repo_profiles.repo = repos.repo),
+      test_framework = (SELECT test_framework FROM repo_profiles WHERE repo_profiles.repo = repos.repo),
+      lint_command = (SELECT lint_command FROM repo_profiles WHERE repo_profiles.repo = repos.repo),
+      build_command = (SELECT build_command FROM repo_profiles WHERE repo_profiles.repo = repos.repo),
+      pr_template = (SELECT pr_template FROM repo_profiles WHERE repo_profiles.repo = repos.repo),
+      pr_naming_convention = (SELECT pr_naming_convention FROM repo_profiles WHERE repo_profiles.repo = repos.repo),
+      languages = (SELECT languages FROM repo_profiles WHERE repo_profiles.repo = repos.repo),
+      rules_json = (SELECT rules_json FROM repo_profiles WHERE repo_profiles.repo = repos.repo),
+      rules_summary = (SELECT rules_summary FROM repo_profiles WHERE repo_profiles.repo = repos.repo),
+      style_guide_json = (SELECT style_guide_json FROM repo_profiles WHERE repo_profiles.repo = repos.repo),
+      style_guide_summary = (SELECT style_guide_summary FROM repo_profiles WHERE repo_profiles.repo = repos.repo),
+      style_sampled_at = (SELECT style_sampled_at FROM repo_profiles WHERE repo_profiles.repo = repos.repo)
+    WHERE EXISTS (SELECT 1 FROM repo_profiles WHERE repo_profiles.repo = repos.repo)`,
+
+    // Copy from repo_metrics → repos (if any data exists)
+    `UPDATE repos SET
+      ttfg_last_minutes = (SELECT ttfg_last_minutes FROM repo_metrics WHERE repo_metrics.repo = repos.repo),
+      ttfg_p50_minutes = (SELECT ttfg_p50_minutes FROM repo_metrics WHERE repo_metrics.repo = repos.repo),
+      ttfg_p90_minutes = (SELECT ttfg_p90_minutes FROM repo_metrics WHERE repo_metrics.repo = repos.repo),
+      ci_flake_rate = (SELECT ci_flake_rate FROM repo_metrics WHERE repo_metrics.repo = repos.repo),
+      median_merge_minutes = (SELECT median_merge_minutes FROM repo_metrics WHERE repo_metrics.repo = repos.repo),
+      last_bootstrap_at = (SELECT last_bootstrap_at FROM repo_metrics WHERE repo_metrics.repo = repos.repo)
+    WHERE EXISTS (SELECT 1 FROM repo_metrics WHERE repo_metrics.repo = repos.repo)`,
+
+    // Copy from repo_reputation → repos (if any data exists)
+    `UPDATE repos SET
+      total_bounties_paid = COALESCE((SELECT total_bounties_paid FROM repo_reputation WHERE repo_reputation.repo = repos.repo), 0),
+      total_payout_amount = COALESCE((SELECT total_payout_amount FROM repo_reputation WHERE repo_reputation.repo = repos.repo), 0),
+      avg_payout_amount = (SELECT avg_payout_amount FROM repo_reputation WHERE repo_reputation.repo = repos.repo),
+      payout_success_rate = (SELECT reputation_score FROM repo_reputation WHERE repo_reputation.repo = repos.repo) / 100.0,
+      last_payout_at = (SELECT last_payout_at FROM repo_reputation WHERE repo_reputation.repo = repos.repo),
+      bounties_posted_90d = COALESCE((SELECT bounties_posted_90d FROM repo_reputation WHERE repo_reputation.repo = repos.repo), 0),
+      bounties_claimed_90d = COALESCE((SELECT bounties_claimed_90d FROM repo_reputation WHERE repo_reputation.repo = repos.repo), 0),
+      bounties_paid_90d = COALESCE((SELECT bounties_paid_90d FROM repo_reputation WHERE repo_reputation.repo = repos.repo), 0),
+      avg_time_to_merge_hours = (SELECT avg_time_to_merge_hours FROM repo_reputation WHERE repo_reputation.repo = repos.repo),
+      avg_review_rounds = (SELECT avg_review_rounds FROM repo_reputation WHERE repo_reputation.repo = repos.repo),
+      maintainer_response_hours = (SELECT maintainer_response_hours FROM repo_reputation WHERE repo_reputation.repo = repos.repo),
+      reputation_score = COALESCE((SELECT reputation_score FROM repo_reputation WHERE repo_reputation.repo = repos.repo), 50)
+    WHERE EXISTS (SELECT 1 FROM repo_reputation WHERE repo_reputation.repo = repos.repo)`,
+
+    // Copy from cla_status → repos (if any data exists)
+    `UPDATE repos SET
+      cla_required = COALESCE((SELECT cla_required FROM cla_status WHERE cla_status.repo = repos.repo), cla_required),
+      cla_url = COALESCE((SELECT cla_url FROM cla_status WHERE cla_status.repo = repos.repo), cla_url),
+      cla_type = (SELECT cla_type FROM cla_status WHERE cla_status.repo = repos.repo),
+      cla_status = COALESCE((SELECT cla_status FROM cla_status WHERE cla_status.repo = repos.repo), 'unknown'),
+      dco_required = COALESCE((SELECT dco_required FROM cla_status WHERE cla_status.repo = repos.repo), 0)
+    WHERE EXISTS (SELECT 1 FROM cla_status WHERE cla_status.repo = repos.repo)`,
+
+    // Copy from repo_blocklist → repos (if any data exists)
+    `UPDATE repos SET
+      is_blocklisted = 1,
+      blocklist_reason = (SELECT reason FROM repo_blocklist WHERE repo_blocklist.repo = repos.repo)
+    WHERE EXISTS (SELECT 1 FROM repo_blocklist WHERE repo_blocklist.repo = repos.repo)`,
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 10.3 ISSUES_INDEX: Add ALL validation fields (ephemeral data)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Live validation state (refreshed on each hunt):
+    `ALTER TABLE issues_index ADD COLUMN validated_at TEXT`,
+    `ALTER TABLE issues_index ADD COLUMN live_state TEXT`,
+    `ALTER TABLE issues_index ADD COLUMN competing_prs INTEGER DEFAULT 0`,
+    `ALTER TABLE issues_index ADD COLUMN competing_prs_json TEXT`,
+    `ALTER TABLE issues_index ADD COLUMN first_pr_at TEXT`,
+    `ALTER TABLE issues_index ADD COLUMN claimed_by TEXT`,
+    `ALTER TABLE issues_index ADD COLUMN claimed_at TEXT`,
+    `ALTER TABLE issues_index ADD COLUMN days_since_activity INTEGER`,
+    `ALTER TABLE issues_index ADD COLUMN assignees_json TEXT`,
+
+    // Computed risk/quality scores (cached):
+    `ALTER TABLE issues_index ADD COLUMN competition_risk_score INTEGER`,
+    `ALTER TABLE issues_index ADD COLUMN freshness_score INTEGER`,
+    `ALTER TABLE issues_index ADD COLUMN validation_error TEXT`,
+
+    // Complexity estimation (from template match or ML):
+    `ALTER TABLE issues_index ADD COLUMN complexity_tier TEXT`,
+    `ALTER TABLE issues_index ADD COLUMN est_minutes_best INTEGER`,
+    `ALTER TABLE issues_index ADD COLUMN est_minutes_worst INTEGER`,
+
+    // Create indexes for faster validation queries
+    `CREATE INDEX IF NOT EXISTS idx_issues_validated ON issues_index(validated_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_issues_competing ON issues_index(competing_prs)`,
+    `CREATE INDEX IF NOT EXISTS idx_issues_live_state ON issues_index(live_state)`,
+    `CREATE INDEX IF NOT EXISTS idx_issues_risk ON issues_index(competition_risk_score DESC)`,
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 10.4 MIGRATE DATA: Copy competition_checks → issues_index (latest only)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Get latest competition check for each engagement, then map to issue
+    `UPDATE issues_index SET
+      competing_prs = (
+        SELECT cc.risk_score
+        FROM competition_checks cc
+        INNER JOIN engagements e ON cc.engagement_id = e.id
+        WHERE e.issue_url = issues_index.url
+        ORDER BY cc.ts DESC LIMIT 1
+      ),
+      competing_prs_json = (
+        SELECT cc.competing_items_json
+        FROM competition_checks cc
+        INNER JOIN engagements e ON cc.engagement_id = e.id
+        WHERE e.issue_url = issues_index.url
+        ORDER BY cc.ts DESC LIMIT 1
+      ),
+      validated_at = (
+        SELECT cc.ts
+        FROM competition_checks cc
+        INNER JOIN engagements e ON cc.engagement_id = e.id
+        WHERE e.issue_url = issues_index.url
+        ORDER BY cc.ts DESC LIMIT 1
+      ),
+      competition_risk_score = (
+        SELECT cc.risk_score
+        FROM competition_checks cc
+        INNER JOIN engagements e ON cc.engagement_id = e.id
+        WHERE e.issue_url = issues_index.url
+        ORDER BY cc.ts DESC LIMIT 1
+      )
+    WHERE EXISTS (
+      SELECT 1 FROM engagements e
+      INNER JOIN competition_checks cc ON cc.engagement_id = e.id
+      WHERE e.issue_url = issues_index.url
+    )`,
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 10.5 Hunt run history (lightweight analytics only)
+    // ─────────────────────────────────────────────────────────────────────────
+    `CREATE TABLE IF NOT EXISTS hunt_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      options_json TEXT,
+      candidates INTEGER DEFAULT 0,
+      validated INTEGER DEFAULT 0,
+      shown INTEGER DEFAULT 0,
+      duration_ms INTEGER,
+      filters_applied_json TEXT
+    )`,
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 10.6 Create useful indexes for consolidated queries
+    // ─────────────────────────────────────────────────────────────────────────
+    `CREATE INDEX IF NOT EXISTS idx_repos_validated ON repos(last_validated_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_repos_bounty_count ON repos(open_bounty_count DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_repos_reputation ON repos(reputation_score DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_repos_payout ON repos(total_payout_amount DESC)`,
+
+    // Update schema version
+    `INSERT OR REPLACE INTO schema_version (version) VALUES (10)`
   ]
 };
 
