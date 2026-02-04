@@ -49,6 +49,16 @@ import { abortCommand, abortStatsCommand } from './commands/abort';
 // Analytics and metrics
 import { metricsCommand } from './commands/metrics';
 
+// Text rewrite and competition monitoring (v7)
+import { textCommand } from './commands/text';
+import { competitionCommand } from './commands/competition';
+
+// Seed and baseline discovery (v8)
+import { seedCommand } from './commands/seed';
+
+// Repo blocklist management (v9)
+import { bunkCommand } from './commands/bunk';
+
 const program = new Command();
 
 program
@@ -127,6 +137,16 @@ program.addCommand(abortStatsCommand);
 
 // Analytics and metrics
 program.addCommand(metricsCommand);
+
+// Text rewrite and competition monitoring (v7)
+program.addCommand(textCommand);
+program.addCommand(competitionCommand);
+
+// Seed and baseline discovery (v8)
+program.addCommand(seedCommand);
+
+// Repo blocklist management (v9)
+program.addCommand(bunkCommand);
 
 // Quick aliases
 program

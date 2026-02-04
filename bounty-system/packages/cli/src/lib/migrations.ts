@@ -11,7 +11,7 @@
 import { getDb } from './db';
 
 // Current schema version
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 9;
 
 /**
  * Migration definitions
@@ -505,6 +505,194 @@ const migrations: Record<number, string[]> = {
 
     // Update schema version
     `INSERT OR REPLACE INTO schema_version (version) VALUES (6)`
+  ],
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // V7: Competition Checks + Engagement Adapters
+  // ═══════════════════════════════════════════════════════════════════════════
+  7: [
+    // Competition checks - tracking competing PRs and risk over time
+    `CREATE TABLE IF NOT EXISTS competition_checks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      engagement_id TEXT NOT NULL,
+      ts TEXT DEFAULT CURRENT_TIMESTAMP,
+      risk_score INTEGER NOT NULL,
+      drivers_json TEXT,
+      competing_items_json TEXT,
+      recommended_action TEXT,
+      FOREIGN KEY (engagement_id) REFERENCES engagements(id)
+    )`,
+
+    `CREATE INDEX IF NOT EXISTS idx_competition_engagement ON competition_checks(engagement_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_competition_ts ON competition_checks(ts DESC)`,
+
+    // Add adapter field to engagements for engagement-specific workflow
+    `ALTER TABLE engagements ADD COLUMN adapter TEXT DEFAULT 'comment_intent'`,
+    `ALTER TABLE engagements ADD COLUMN adapter_reason TEXT`,
+
+    // Update schema version
+    `INSERT OR REPLACE INTO schema_version (version) VALUES (7)`
+  ],
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // V8: Seed & Baseline Discovery System
+  // ═══════════════════════════════════════════════════════════════════════════
+  8: [
+    // ─────────────────────────────────────────────────────────────────────────
+    // 8.1 Extend repos table for seed scoring
+    // ─────────────────────────────────────────────────────────────────────────
+    `ALTER TABLE repos ADD COLUMN stars INTEGER`,
+    `ALTER TABLE repos ADD COLUMN forks INTEGER`,
+    `ALTER TABLE repos ADD COLUMN seed_score INTEGER`,
+    `ALTER TABLE repos ADD COLUMN bounty_like_issues_90d INTEGER DEFAULT 0`,
+    `ALTER TABLE repos ADD COLUMN bounty_like_issues_365d INTEGER DEFAULT 0`,
+    `ALTER TABLE repos ADD COLUMN payout_hint_count INTEGER DEFAULT 0`,
+    `ALTER TABLE repos ADD COLUMN maintainer_activity_score INTEGER`,
+    `ALTER TABLE repos ADD COLUMN merge_velocity_score INTEGER`,
+    `ALTER TABLE repos ADD COLUMN preferred_env TEXT DEFAULT 'local'`,
+    `ALTER TABLE repos ADD COLUMN preferred_env_reasons_json TEXT`,
+    `ALTER TABLE repos ADD COLUMN last_seeded_at TEXT`,
+    `ALTER TABLE repos ADD COLUMN seed_score_breakdown_json TEXT`,
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 8.2 Repo signals table for tracking discovery signals
+    // ─────────────────────────────────────────────────────────────────────────
+    `CREATE TABLE IF NOT EXISTS repo_signals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo TEXT NOT NULL,
+      signal_type TEXT NOT NULL,
+      value_numeric REAL,
+      value_text TEXT,
+      observed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      source_url TEXT,
+      FOREIGN KEY (repo) REFERENCES repos(repo)
+    )`,
+
+    `CREATE INDEX IF NOT EXISTS idx_repo_signals_repo ON repo_signals(repo)`,
+    `CREATE INDEX IF NOT EXISTS idx_repo_signals_type ON repo_signals(signal_type)`,
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 8.3 Extend issues_index for payout detection
+    // ─────────────────────────────────────────────────────────────────────────
+    `ALTER TABLE issues_index ADD COLUMN detected_payout_amount REAL`,
+    `ALTER TABLE issues_index ADD COLUMN detected_currency TEXT`,
+    `ALTER TABLE issues_index ADD COLUMN detected_payout_hint_text TEXT`,
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 8.4 Seed runs tracking table
+    // ─────────────────────────────────────────────────────────────────────────
+    `CREATE TABLE IF NOT EXISTS seed_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      status TEXT,
+      queries_executed INTEGER DEFAULT 0,
+      total_results INTEGER DEFAULT 0,
+      unique_repos INTEGER DEFAULT 0,
+      unique_issues INTEGER DEFAULT 0,
+      rate_limit_hits INTEGER DEFAULT 0,
+      errors_json TEXT,
+      config_json TEXT
+    )`,
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 8.5 Query execution tracking
+    // ─────────────────────────────────────────────────────────────────────────
+    `CREATE TABLE IF NOT EXISTS seed_query_results (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      seed_run_id INTEGER NOT NULL,
+      query_id TEXT NOT NULL,
+      query_category TEXT NOT NULL,
+      executed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      results_count INTEGER DEFAULT 0,
+      unique_repos_found INTEGER DEFAULT 0,
+      rate_limited INTEGER DEFAULT 0,
+      error_text TEXT,
+      FOREIGN KEY (seed_run_id) REFERENCES seed_runs(id)
+    )`,
+
+    `CREATE INDEX IF NOT EXISTS idx_seed_query_run ON seed_query_results(seed_run_id)`,
+
+    // Update schema version
+    `INSERT OR REPLACE INTO schema_version (version) VALUES (8)`
+  ],
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // V9: Repo Reputation + Blocklist System (Historical Evidence)
+  // ═══════════════════════════════════════════════════════════════════════════
+  9: [
+    // ─────────────────────────────────────────────────────────────────────────
+    // 9.1 Repo blocklist - known bad/bunk repos
+    // ─────────────────────────────────────────────────────────────────────────
+    `CREATE TABLE IF NOT EXISTS repo_blocklist (
+      repo TEXT PRIMARY KEY,
+      reason TEXT NOT NULL,
+      blocked_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      blocked_by TEXT DEFAULT 'manual',
+      evidence_json TEXT,
+      notes TEXT
+    )`,
+
+    `CREATE INDEX IF NOT EXISTS idx_blocklist_reason ON repo_blocklist(reason)`,
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 9.2 Repo reputation - track payout history
+    // ─────────────────────────────────────────────────────────────────────────
+    `CREATE TABLE IF NOT EXISTS repo_reputation (
+      repo TEXT PRIMARY KEY,
+      -- Payout history
+      total_bounties_paid INTEGER DEFAULT 0,
+      total_payout_amount REAL DEFAULT 0,
+      avg_payout_amount REAL,
+      last_payout_at TEXT,
+      -- Activity signals
+      bounties_posted_90d INTEGER DEFAULT 0,
+      bounties_claimed_90d INTEGER DEFAULT 0,
+      bounties_paid_90d INTEGER DEFAULT 0,
+      -- Quality signals
+      avg_time_to_merge_hours INTEGER,
+      avg_review_rounds REAL,
+      maintainer_response_hours INTEGER,
+      -- Computed reputation score (0-100)
+      reputation_score INTEGER DEFAULT 50,
+      reputation_tier TEXT DEFAULT 'unknown',
+      -- Tracking
+      first_seen_at TEXT,
+      last_updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`,
+
+    `CREATE INDEX IF NOT EXISTS idx_repo_rep_score ON repo_reputation(reputation_score DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_repo_rep_tier ON repo_reputation(reputation_tier)`,
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 9.3 Payout events - historical evidence of actual payouts
+    // ─────────────────────────────────────────────────────────────────────────
+    `CREATE TABLE IF NOT EXISTS payout_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo TEXT NOT NULL,
+      issue_url TEXT,
+      pr_url TEXT,
+      payout_amount REAL NOT NULL,
+      payout_currency TEXT DEFAULT 'USD',
+      paid_at TEXT NOT NULL,
+      source TEXT,
+      evidence_url TEXT,
+      notes TEXT,
+      FOREIGN KEY (repo) REFERENCES repos(repo)
+    )`,
+
+    `CREATE INDEX IF NOT EXISTS idx_payout_repo ON payout_events(repo)`,
+    `CREATE INDEX IF NOT EXISTS idx_payout_date ON payout_events(paid_at DESC)`,
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 9.4 Extend repos table with reputation link
+    // ─────────────────────────────────────────────────────────────────────────
+    `ALTER TABLE repos ADD COLUMN is_blocklisted INTEGER DEFAULT 0`,
+    `ALTER TABLE repos ADD COLUMN blocklist_reason TEXT`,
+    `ALTER TABLE repos ADD COLUMN reputation_tier TEXT DEFAULT 'unknown'`,
+
+    // Update schema version
+    `INSERT OR REPLACE INTO schema_version (version) VALUES (9)`
   ]
 };
 
@@ -586,7 +774,17 @@ export async function getTableCounts(): Promise<Record<string, number>> {
     // v6 tables
     'evidence_bundles',
     'test_runs',
-    'judge_runs'
+    'judge_runs',
+    // v7 tables
+    'competition_checks',
+    // v8 tables
+    'repo_signals',
+    'seed_runs',
+    'seed_query_results',
+    // v9 tables
+    'repo_blocklist',
+    'repo_reputation',
+    'payout_events'
   ];
   const counts: Record<string, number> = {};
 
@@ -609,6 +807,16 @@ export async function resetDatabase(): Promise<void> {
   const db = getDb();
   // Order matters for foreign key constraints (drop dependents first)
   const tables = [
+    // v8 tables (newest first)
+    'seed_query_results',
+    'seed_runs',
+    'repo_signals',
+    // v7 tables
+    'competition_checks',
+    // v6 tables
+    'judge_runs',
+    'test_runs',
+    'evidence_bundles',
     // v2 tables (dependents first)
     'events',
     'repo_metrics',

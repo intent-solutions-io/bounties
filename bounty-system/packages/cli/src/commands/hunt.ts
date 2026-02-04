@@ -1,14 +1,17 @@
 /**
- * Hunt Command - Index-First Bounty Discovery
+ * Hunt Command - Intelligent Bounty Discovery
  *
- * Queries the local issues_index for bounty opportunities.
- * No live GitHub API calls by default - instant results from cached data.
- * Use --refresh to trigger ingestion before hunting.
+ * Queries the local issues_index for bounty opportunities with:
+ * - Freshness filtering (--max-age)
+ * - Live GitHub validation (--validate)
+ * - Competition checking (--check-competition)
+ * - CONTRIBUTING.md links in output
  */
 
 import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
+import { execSync } from 'child_process';
 import { getConfig } from '../lib/config';
 import { getDb, closeDb } from '../lib/db';
 import { sendSlackNotification, type SlackMessage } from '../lib/slack';
@@ -39,17 +42,27 @@ interface HuntResult {
   score: number;
   labels: string[];
   recommendation: 'claim' | 'consider' | 'skip';
+  // Live validation fields
+  liveState?: 'open' | 'closed' | 'unknown';
+  competingPRs?: number;
+  hasContributing?: boolean;
+  contributingUrl?: string;
+  daysSinceUpdate?: number;
+  validationError?: string;
 }
 
 export const huntCommand = new Command('hunt')
-  .description('Search local index for bounty opportunities (instant)')
+  .description('Search for bounty opportunities with live validation')
   .option('--paid', 'Only show paid bounties (has value)')
   .option('--rep', 'Only show reputation opportunities (no payout)')
   .option('-t, --tech <tech>', 'Filter by technology keyword in labels')
   .option('-r, --repo <repo>', 'Filter by repo (owner/repo or partial match)')
   .option('--min-value <n>', 'Minimum bounty value', '0')
   .option('--min-score <n>', 'Minimum score threshold', '0')
+  .option('--max-age <days>', 'Maximum issue age in days (default: 90)', '90')
   .option('-n, --limit <n>', 'Max results to show', '20')
+  .option('--validate', 'Live validate issues via GitHub API')
+  .option('--check-competition', 'Check for competing PRs (slower)')
   .option('--refresh', 'Run ingestion before hunting')
   .option('--stale', 'Show stale sources that need refresh')
   .option('--no-slack', 'Skip Slack notification')
@@ -67,15 +80,13 @@ export const huntCommand = new Command('hunt')
 
       if (issueCount === 0) {
         spinner.warn('No issues in index');
-        console.log(chalk.dim('Run: bounty ingest --all'));
+        console.log(chalk.dim('Run: bounty seed repos  OR  bounty ingest --all'));
         return;
       }
 
       // Run refresh if requested
       if (options.refresh) {
         spinner.text = 'Running ingestion...';
-        // Import dynamically to avoid circular dependency
-        const { execSync } = await import('child_process');
         try {
           execSync('node dist/index.js ingest --due --no-slack', {
             cwd: process.cwd(),
@@ -88,14 +99,23 @@ export const huntCommand = new Command('hunt')
 
       spinner.text = 'Querying local index...';
 
-      // Build query (use single quotes for string literals)
+      // Build query with max-age filter
+      const maxAgeDays = parseInt(options.maxAge, 10);
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - maxAgeDays);
+      const cutoffIso = cutoffDate.toISOString();
+
       let sql = `
-        SELECT i.*, r.maintainer_score_cached, r.repo_score_cached, rm.ttfg_p50_minutes
+        SELECT i.*, r.maintainer_score_cached, r.repo_score_cached, r.seed_score,
+               r.is_blocklisted, rm.ttfg_p50_minutes, rp.contributing_url
         FROM issues_index i
         LEFT JOIN repos r ON i.repo = r.repo
         LEFT JOIN repo_metrics rm ON i.repo = rm.repo
-        WHERE i.state = 'open'`;
-      const args: (string | number)[] = [];
+        LEFT JOIN repo_profiles rp ON i.repo = rp.repo
+        WHERE i.state = 'open'
+        AND (i.updated_at_remote IS NULL OR i.updated_at_remote >= ?)
+        AND (r.is_blocklisted IS NULL OR r.is_blocklisted = 0)`;
+      const args: (string | number)[] = [cutoffIso];
 
       // Filter: paid vs rep
       if (options.paid) {
@@ -122,49 +142,141 @@ export const huntCommand = new Command('hunt')
         args.push(`%${options.repo}%`);
       }
 
-      // Order by score (cached or computed)
+      // Order by score and freshness
       sql += ` ORDER BY
         CASE WHEN i.bounty_amount IS NOT NULL THEN i.bounty_amount ELSE 0 END DESC,
-        COALESCE(r.maintainer_score_cached, 50) DESC,
+        COALESCE(r.seed_score, r.maintainer_score_cached, 50) DESC,
         i.updated_at_remote DESC
         LIMIT ?`;
-      args.push(parseInt(options.limit, 10));
+      args.push(parseInt(options.limit, 10) * 2); // Fetch extra for filtering
 
       const result = await db.execute({ sql, args });
-      spinner.stop();
+      spinner.succeed(`Found ${result.rows.length} candidates (max ${maxAgeDays}d old)`);
 
       if (result.rows.length === 0) {
         console.log(chalk.yellow('\nNo bounties match your criteria'));
-        console.log(chalk.dim('Try adjusting filters or run: bounty ingest --all'));
+        console.log(chalk.dim('Try: --max-age 180  or  bounty seed repos'));
         return;
       }
 
       // Score and rank results
-      const huntResults: HuntResult[] = result.rows.map(row => {
+      let huntResults: HuntResult[] = result.rows.map(row => {
         const issue = row as unknown as IndexedIssue & {
           maintainer_score_cached: number | null;
           repo_score_cached: number | null;
+          seed_score: number | null;
           ttfg_p50_minutes: number | null;
+          contributing_url: string | null;
         };
         const labels = issue.labels_json ? JSON.parse(issue.labels_json) : [];
         const score = computeHuntScore(issue, config);
         const recommendation = score >= 70 ? 'claim' : score >= 40 ? 'consider' : 'skip';
+        const daysSinceUpdate = issue.updated_at_remote
+          ? Math.round((Date.now() - new Date(issue.updated_at_remote).getTime()) / (1000 * 60 * 60 * 24))
+          : undefined;
 
-        return { issue, score, labels, recommendation };
+        return {
+          issue,
+          score,
+          labels,
+          recommendation,
+          daysSinceUpdate,
+          hasContributing: !!issue.contributing_url,
+          contributingUrl: issue.contributing_url || undefined,
+        };
       });
+
+      // Live validation if requested
+      if (options.validate || options.checkCompetition) {
+        const validateSpinner = ora('Validating issues via GitHub...').start();
+        let validated = 0;
+        let closed = 0;
+        let withPRs = 0;
+
+        for (const result of huntResults.slice(0, parseInt(options.limit, 10))) {
+          try {
+            // Extract owner/repo and issue number
+            const match = result.issue.url.match(/github\.com\/([^/]+\/[^/]+)\/issues\/(\d+)/);
+            if (!match) continue;
+
+            const [, repo, issueNum] = match;
+
+            // Check if issue is still open
+            if (options.validate) {
+              const stateOutput = execSync(
+                `gh api repos/${repo}/issues/${issueNum} --jq '.state'`,
+                { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
+              ).trim();
+              result.liveState = stateOutput === 'open' ? 'open' : 'closed';
+              if (result.liveState === 'closed') closed++;
+            }
+
+            // Check for competing PRs
+            if (options.checkCompetition) {
+              const timelineOutput = execSync(
+                `gh api repos/${repo}/issues/${issueNum}/timeline --jq '[.[] | select(.event == "cross-referenced" and .source.issue.pull_request != null)] | length'`,
+                { encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
+              ).trim();
+              result.competingPRs = parseInt(timelineOutput, 10) || 0;
+              if (result.competingPRs > 0) withPRs++;
+            }
+
+            // Check for CONTRIBUTING.md if not already known
+            if (!result.hasContributing) {
+              try {
+                execSync(`gh api repos/${repo}/contents/CONTRIBUTING.md --silent`, {
+                  timeout: 3000,
+                  stdio: ['pipe', 'pipe', 'pipe']
+                });
+                result.hasContributing = true;
+                result.contributingUrl = `https://github.com/${repo}/blob/main/CONTRIBUTING.md`;
+              } catch {
+                result.hasContributing = false;
+              }
+            }
+
+            validated++;
+          } catch (error) {
+            result.validationError = error instanceof Error ? error.message : 'unknown';
+            result.liveState = 'unknown';
+          }
+        }
+
+        validateSpinner.succeed(`Validated ${validated} issues (${closed} closed, ${withPRs} with PRs)`);
+
+        // Filter out closed issues
+        if (options.validate) {
+          huntResults = huntResults.filter(r => r.liveState !== 'closed');
+        }
+
+        // Penalize issues with competing PRs
+        if (options.checkCompetition) {
+          for (const r of huntResults) {
+            if (r.competingPRs && r.competingPRs > 0) {
+              r.score = Math.max(0, r.score - (r.competingPRs * 15));
+              if (r.competingPRs >= 2) {
+                r.recommendation = 'skip';
+              } else if (r.recommendation === 'claim') {
+                r.recommendation = 'consider';
+              }
+            }
+          }
+        }
+      }
 
       // Sort by score
       huntResults.sort((a, b) => b.score - a.score);
 
-      // Apply min-score filter
+      // Apply min-score filter and limit
       const minScore = parseInt(options.minScore, 10);
-      const filtered = minScore > 0
+      let filtered = minScore > 0
         ? huntResults.filter(r => r.score >= minScore)
         : huntResults;
+      filtered = filtered.slice(0, parseInt(options.limit, 10));
 
       // Print results
-      console.log(chalk.bold(`\nFound ${filtered.length} opportunities (from ${issueCount} indexed)\n`));
-      printHuntResults(filtered);
+      console.log(chalk.bold(`\n${filtered.length} opportunities (from ${issueCount} indexed, max ${maxAgeDays}d old)\n`));
+      printHuntResults(filtered, options.verbose, options.checkCompetition);
 
       // Show stale sources if requested
       if (options.stale) {
@@ -176,14 +288,17 @@ export const huntCommand = new Command('hunt')
       if (claimable.length > 0) {
         console.log(chalk.bold('\nNext step:'));
         console.log(chalk.cyan(`  bounty qualify ${claimable[0].issue.url}`));
+        if (claimable[0].contributingUrl) {
+          console.log(chalk.dim(`  Rules: ${claimable[0].contributingUrl}`));
+        }
         console.log('');
       }
 
       // Notify Slack if significant results
       if (options.slack !== false && claimable.length > 0) {
-        const slackContent = buildSlackSummary(filtered.slice(0, 5), issueCount);
+        const slackContent = buildSlackSummary(filtered.slice(0, 5), issueCount, maxAgeDays);
         await sendSlackNotification({
-          type: 'bounty_qualified',
+          type: 'hunt_results',
           content: slackContent
         } as SlackMessage);
       }
@@ -202,13 +317,14 @@ export const huntCommand = new Command('hunt')
  *
  * Score factors:
  * - Bounty value (30%)
- * - Maintainer score (20%)
+ * - Maintainer/Seed score (20%)
  * - TTFTG penalty (15%)
  * - Age freshness (15%)
- * - Complexity hints (20%)
+ * - Tech fit (20%)
  */
 function computeHuntScore(issue: IndexedIssue & {
   maintainer_score_cached: number | null;
+  seed_score: number | null;
   ttfg_p50_minutes: number | null;
 }, config: any): number {
   let score = 50; // Base score
@@ -222,9 +338,11 @@ function computeHuntScore(issue: IndexedIssue & {
     else score += 10;
   }
 
-  // Maintainer score bonus (up to +20)
-  if (issue.maintainer_score_cached) {
-    score += Math.round((issue.maintainer_score_cached / 100) * 20);
+  // Seed score bonus (up to +15) - uses our discovered data
+  if (issue.seed_score) {
+    score += Math.round((issue.seed_score / 100) * 15);
+  } else if (issue.maintainer_score_cached) {
+    score += Math.round((issue.maintainer_score_cached / 100) * 15);
   }
 
   // TTFTG penalty (up to -15)
@@ -234,12 +352,14 @@ function computeHuntScore(issue: IndexedIssue & {
     else if (issue.ttfg_p50_minutes > 15) score -= 5;
   }
 
-  // Freshness bonus (up to +10)
+  // Freshness bonus (up to +15)
   if (issue.updated_at_remote) {
     const daysSinceUpdate = (Date.now() - new Date(issue.updated_at_remote).getTime()) / (1000 * 60 * 60 * 24);
-    if (daysSinceUpdate < 7) score += 10;
+    if (daysSinceUpdate < 7) score += 15;
+    else if (daysSinceUpdate < 14) score += 10;
     else if (daysSinceUpdate < 30) score += 5;
-    else if (daysSinceUpdate > 90) score -= 10;
+    else if (daysSinceUpdate > 60) score -= 5;
+    else if (daysSinceUpdate > 90) score -= 15;
   }
 
   // Tech fit bonus from config
@@ -275,45 +395,72 @@ function computeHuntScore(issue: IndexedIssue & {
 /**
  * Print hunt results table
  */
-function printHuntResults(results: HuntResult[]) {
-  console.log(chalk.dim('─'.repeat(100)));
-  console.log(
-    chalk.bold(padRight('Score', 8)) +
-    chalk.bold(padRight('Rec', 8)) +
-    chalk.bold(padRight('Value', 10)) +
-    chalk.bold(padRight('Repo', 25)) +
-    chalk.bold('Title')
-  );
-  console.log(chalk.dim('─'.repeat(100)));
+function printHuntResults(results: HuntResult[], verbose: boolean, showCompetition: boolean) {
+  // Header
+  let header = chalk.bold(padRight('Score', 7)) +
+    chalk.bold(padRight('Rec', 6)) +
+    chalk.bold(padRight('Value', 8)) +
+    chalk.bold(padRight('Age', 6));
 
-  for (const { issue, score, recommendation } of results) {
+  if (showCompetition) {
+    header += chalk.bold(padRight('PRs', 5));
+  }
+
+  header += chalk.bold(padRight('Repo', 25)) + chalk.bold('Title');
+
+  console.log(chalk.dim('─'.repeat(105)));
+  console.log(header);
+  console.log(chalk.dim('─'.repeat(105)));
+
+  for (const { issue, score, recommendation, daysSinceUpdate, competingPRs, hasContributing, contributingUrl, liveState } of results) {
     const scoreColor = score >= 70 ? chalk.green
       : score >= 50 ? chalk.greenBright
       : score >= 40 ? chalk.yellow
       : chalk.red;
 
-    const recEmoji = { claim: ' ✅', consider: ' 🤔', skip: ' ❌' };
+    const recEmoji: Record<string, string> = { claim: '✅', consider: '🤔', skip: '❌' };
 
     const value = issue.bounty_amount
       ? chalk.green(`$${issue.bounty_amount}`)
       : issue.is_bounty_like ? chalk.cyan('rep') : chalk.dim('-');
 
+    const ageStr = daysSinceUpdate !== undefined
+      ? (daysSinceUpdate < 7 ? chalk.green(`${daysSinceUpdate}d`) :
+         daysSinceUpdate < 30 ? chalk.yellow(`${daysSinceUpdate}d`) :
+         chalk.red(`${daysSinceUpdate}d`))
+      : chalk.dim('?');
+
     const repoShort = truncate(issue.repo, 23);
-    const title = truncate(issue.title, 45);
+    const title = truncate(issue.title, 40);
 
-    console.log(
-      scoreColor(padRight(`${score}`, 8)) +
-      padRight(recEmoji[recommendation], 8) +
-      padRight(String(issue.bounty_amount ? `$${issue.bounty_amount}` : (issue.is_bounty_like ? 'rep' : '-')), 10) +
-      padRight(repoShort, 25) +
-      title
-    );
+    // State indicator
+    const stateIndicator = liveState === 'closed' ? chalk.red(' [CLOSED]') :
+                           liveState === 'open' ? '' : '';
 
-    // Show URL on second line
-    console.log(chalk.dim(`        ${truncate(issue.url, 85)}`));
+    let row = scoreColor(padRight(`${score}`, 7)) +
+      padRight(recEmoji[recommendation], 6) +
+      padRight(String(issue.bounty_amount ? `$${issue.bounty_amount}` : (issue.is_bounty_like ? 'rep' : '-')), 8) +
+      padRight(ageStr, 6);
+
+    if (showCompetition) {
+      const prStr = competingPRs !== undefined
+        ? (competingPRs === 0 ? chalk.green('0') : chalk.red(String(competingPRs)))
+        : chalk.dim('?');
+      row += padRight(prStr, 5);
+    }
+
+    row += padRight(repoShort, 25) + title + stateIndicator;
+    console.log(row);
+
+    // Show URL and CONTRIBUTING on second line
+    let secondLine = chalk.dim(`       ${truncate(issue.url, 75)}`);
+    if (hasContributing && verbose) {
+      secondLine += chalk.cyan(' [CONTRIBUTING.md]');
+    }
+    console.log(secondLine);
   }
 
-  console.log(chalk.dim('─'.repeat(100)));
+  console.log(chalk.dim('─'.repeat(105)));
 
   // Summary
   const claimable = results.filter(r => r.recommendation === 'claim');
@@ -324,6 +471,11 @@ function printHuntResults(results: HuntResult[]) {
     `${chalk.yellow('🤔')} Consider: ${consider.length}  ` +
     `${chalk.red('❌')} Skip: ${results.length - claimable.length - consider.length}`
   );
+
+  // Legend
+  if (showCompetition) {
+    console.log(chalk.dim('\nPRs = competing pull requests (0 = clear, 1+ = competition)'));
+  }
 }
 
 /**
@@ -367,17 +519,19 @@ async function printStaleSources(db: ReturnType<typeof getDb>) {
 /**
  * Build Slack summary
  */
-function buildSlackSummary(results: HuntResult[], totalIndexed: number): string {
+function buildSlackSummary(results: HuntResult[], totalIndexed: number, maxAgeDays: number): string {
   const lines: string[] = [];
 
   lines.push('*HUNT RESULTS*');
-  lines.push(`Found ${results.length} top opportunities (from ${totalIndexed} indexed)`);
+  lines.push(`Found ${results.length} opportunities (from ${totalIndexed} indexed, <${maxAgeDays}d old)`);
   lines.push('');
 
   for (const r of results.slice(0, 5)) {
     const value = r.issue.bounty_amount ? `$${r.issue.bounty_amount}` : 'rep';
     const rec = r.recommendation === 'claim' ? ':white_check_mark:' : ':thinking_face:';
-    lines.push(`${rec} *${r.issue.repo}* - ${truncate(r.issue.title, 40)} (${value})`);
+    const age = r.daysSinceUpdate !== undefined ? `${r.daysSinceUpdate}d` : '?';
+    const competition = r.competingPRs !== undefined ? ` | ${r.competingPRs} PRs` : '';
+    lines.push(`${rec} *${r.issue.repo}* - ${truncate(r.issue.title, 35)} (${value}, ${age}${competition})`);
     lines.push(`    <${r.issue.url}|View issue>`);
   }
 
