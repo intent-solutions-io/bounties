@@ -61,8 +61,9 @@ export const huntCommand = new Command('hunt')
   .option('--min-score <n>', 'Minimum score threshold', '0')
   .option('--max-age <days>', 'Maximum issue age in days (default: 14)', '14')
   .option('-n, --limit <n>', 'Max results to show', '20')
-  .option('--validate', 'Live validate issues via GitHub API')
-  .option('--check-competition', 'Check for competing PRs (slower)')
+  .option('--no-validate', 'Skip live GitHub validation')
+  .option('--no-check-competition', 'Skip competition check')
+  .option('--show-claimed', 'Show issues that already have PRs')
   .option('--refresh', 'Run ingestion before hunting')
   .option('--stale', 'Show stale sources that need refresh')
   .option('--no-slack', 'Skip Slack notification')
@@ -187,8 +188,8 @@ export const huntCommand = new Command('hunt')
         };
       });
 
-      // Live validation if requested
-      if (options.validate || options.checkCompetition) {
+      // Live validation (default ON unless --no-validate)
+      if (options.validate !== false || options.checkCompetition !== false) {
         const validateSpinner = ora('Validating issues via GitHub...').start();
         let validated = 0;
         let closed = 0;
@@ -203,7 +204,7 @@ export const huntCommand = new Command('hunt')
             const [, repo, issueNum] = match;
 
             // Check if issue is still open
-            if (options.validate) {
+            if (options.validate !== false) {
               const stateOutput = execSync(
                 `gh api repos/${repo}/issues/${issueNum} --jq '.state'`,
                 { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
@@ -213,7 +214,7 @@ export const huntCommand = new Command('hunt')
             }
 
             // Check for competing PRs
-            if (options.checkCompetition) {
+            if (options.checkCompetition !== false) {
               const timelineOutput = execSync(
                 `gh api repos/${repo}/issues/${issueNum}/timeline --jq '[.[] | select(.event == "cross-referenced" and .source.issue.pull_request != null)] | length'`,
                 { encoding: 'utf-8', timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'] }
@@ -246,21 +247,17 @@ export const huntCommand = new Command('hunt')
         validateSpinner.succeed(`Validated ${validated} issues (${closed} closed, ${withPRs} with PRs)`);
 
         // Filter out closed issues
-        if (options.validate) {
+        if (options.validate !== false) {
           huntResults = huntResults.filter(r => r.liveState !== 'closed');
         }
 
-        // Penalize issues with competing PRs
-        if (options.checkCompetition) {
-          for (const r of huntResults) {
-            if (r.competingPRs && r.competingPRs > 0) {
-              r.score = Math.max(0, r.score - (r.competingPRs * 15));
-              if (r.competingPRs >= 2) {
-                r.recommendation = 'skip';
-              } else if (r.recommendation === 'claim') {
-                r.recommendation = 'consider';
-              }
-            }
+        // Filter out issues with competing PRs (unless --show-claimed)
+        if (options.checkCompetition !== false && !options.showClaimed) {
+          const beforeCount = huntResults.length;
+          huntResults = huntResults.filter(r => !r.competingPRs || r.competingPRs === 0);
+          const filtered = beforeCount - huntResults.length;
+          if (filtered > 0) {
+            console.log(chalk.dim(`  Filtered ${filtered} issues with existing PRs`));
           }
         }
       }
@@ -277,7 +274,7 @@ export const huntCommand = new Command('hunt')
 
       // Print results
       console.log(chalk.bold(`\n${filtered.length} opportunities (from ${issueCount} indexed, max ${maxAgeDays}d old)\n`));
-      printHuntResults(filtered, options.verbose, options.checkCompetition);
+      printHuntResults(filtered, options.verbose, options.showClaimed);
 
       // Show stale sources if requested
       if (options.stale) {
@@ -531,9 +528,16 @@ function buildSlackSummary(results: HuntResult[], totalIndexed: number, maxAgeDa
     const value = r.issue.bounty_amount ? `$${r.issue.bounty_amount}` : 'rep';
     const rec = r.recommendation === 'claim' ? ':white_check_mark:' : ':thinking_face:';
     const age = r.daysSinceUpdate !== undefined ? `${r.daysSinceUpdate}d` : '?';
-    const competition = r.competingPRs !== undefined ? ` | ${r.competingPRs} PRs` : '';
+    const competition = r.competingPRs !== undefined && r.competingPRs > 0 ? ` | ${r.competingPRs} PRs` : ' | 0 PRs';
     lines.push(`${rec} *${r.issue.repo}* - ${truncate(r.issue.title, 35)} (${value}, ${age}${competition})`);
     lines.push(`    <${r.issue.url}|View issue>`);
+    // Add CONTRIBUTING.md link
+    if (r.contributingUrl) {
+      lines.push(`    <${r.contributingUrl}|CONTRIBUTING.md>`);
+    } else if (r.hasContributing === false) {
+      const [owner, repo] = r.issue.repo.split('/');
+      lines.push(`    <https://github.com/${owner}/${repo}#readme|README (no CONTRIBUTING.md)>`);
+    }
   }
 
   lines.push('');

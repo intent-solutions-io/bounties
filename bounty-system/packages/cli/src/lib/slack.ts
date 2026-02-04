@@ -32,6 +32,7 @@ export async function getSlackConfig(): Promise<SlackConfig> {
 
 // Message types for different notification scenarios
 export type MessageType =
+  | 'hunt_results'         // Hunt results summary
   | 'bounty_qualified'     // Step 1: Bounty passed scoring, show CONTRIBUTING.md
   | 'bounty_plan'          // Step 2: Implementation plan for review
   | 'bounty_draft'         // Step 3: Draft claim comment for review
@@ -165,6 +166,19 @@ function buildSlackPayload(message: SlackMessage): Record<string, unknown> {
   const blocks: unknown[] = [];
 
   switch (message.type) {
+    case 'hunt_results':
+      blocks.push(
+        {
+          type: 'header',
+          text: { type: 'plain_text', text: '🎯 BOUNTY HUNT RESULTS', emoji: true }
+        },
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: message.content || 'No results' }
+        }
+      );
+      break;
+
     case 'bounty_qualified':
       blocks.push(
         {
